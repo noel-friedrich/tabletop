@@ -1,14 +1,19 @@
 const userInteractionInfo = {
   dragStart: null,
-  selectedGameCardCopy: null,
   selectedGameCard: null,
   dragNewPos: null,
   dragCardStartPos: null,
+  dragCardStartPosByUid: new Map(),
   dragCurrScreenNormPos: null,
   lastDragSyncTime: 0,
   dragSyncIntervalMs: 60,
+  selectedCardUids: new Set(),
+  selectionBoxStart: null,
+  selectionBoxEnd: null,
+  isSelecting: false,
   lookDragActive: false,
   lookPreviewCardUid: null,
+  lookPreviewImageKey: null,
 };
 
 let lookDragPreviewElement = null;
@@ -70,6 +75,92 @@ function makeCardMove(
   }
 }
 
+function getHostSelectedCards() {
+  if (deviceInfo.role != DeviceRole.Host) {
+    return [];
+  }
+
+  return gameState.gameCards
+    .filter(
+      (card) =>
+        card.deviceId == DeviceIdCatalogue.Board &&
+        userInteractionInfo.selectedCardUids.has(card.uid),
+    )
+    .sort((a, b) => a.layerIndex - b.layerIndex);
+}
+
+function setSelectedCardUids(cardUids = []) {
+  const nextSelectedCardUids = new Set(cardUids);
+  let didChange =
+    nextSelectedCardUids.size != userInteractionInfo.selectedCardUids.size;
+
+  if (!didChange) {
+    for (const uid of nextSelectedCardUids) {
+      if (!userInteractionInfo.selectedCardUids.has(uid)) {
+        didChange = true;
+        break;
+      }
+    }
+  }
+
+  userInteractionInfo.selectedCardUids = nextSelectedCardUids;
+
+  if (didChange) {
+    gameState.redraw();
+  }
+}
+
+function clearSelectionBox() {
+  userInteractionInfo.selectionBoxStart = null;
+  userInteractionInfo.selectionBoxEnd = null;
+  userInteractionInfo.isSelecting = false;
+}
+
+function raiseCardsToTop(cards) {
+  const orderedCards = [...cards].sort((a, b) => a.layerIndex - b.layerIndex);
+  const baseLayerIndex = gameState.maxLayerIndex + 1;
+
+  for (let i = 0; i < orderedCards.length; i++) {
+    orderedCards[i].layerIndex = baseLayerIndex + i;
+  }
+}
+
+function makeHostSelectedCardsMove(moveDelta, { forceSync = false } = {}) {
+  if (deviceInfo.role != DeviceRole.Host) {
+    return;
+  }
+
+  let movedAny = false;
+  for (const [uid, startPos] of userInteractionInfo.dragCardStartPosByUid) {
+    const gameCard = gameState.getCardByUid(uid);
+    if (!gameCard) {
+      continue;
+    }
+
+    const newPos = startPos.add(moveDelta);
+    gameCard.setOnlyNormalisedPos(newPos);
+    gameCard.setDesiredPos(newPos);
+    movedAny = true;
+
+    if (
+      userInteractionInfo.selectedGameCard &&
+      userInteractionInfo.selectedGameCard.uid == uid
+    ) {
+      userInteractionInfo.dragNewPos = newPos;
+    }
+  }
+
+  if (!movedAny) {
+    return;
+  }
+
+  gameState.redraw();
+
+  if (shouldSyncDragUpdate(forceSync)) {
+    syncGamestateToClients();
+  }
+}
+
 const normPosFromEvent = (event) => {
   const screenPos = Vector2d.fromEvent(event, fullscreenCanvas);
   return GameDrawer.screenPosToNormPos(fullscreenCanvas, screenPos);
@@ -83,11 +174,84 @@ function preventBrowserGestureWhileDragging(event) {
 
   if (
     userInteractionInfo.dragStart ||
+    userInteractionInfo.isSelecting ||
     userInteractionInfo.lookDragActive ||
     userInteractionInfo.selectedGameCard
   ) {
     event.preventDefault();
   }
+}
+
+function getSelectionBoxRect() {
+  if (
+    !userInteractionInfo.selectionBoxStart ||
+    !userInteractionInfo.selectionBoxEnd
+  ) {
+    return null;
+  }
+
+  const startScreenPos = GameDrawer.normPosToScreenPos(
+    fullscreenCanvas,
+    userInteractionInfo.selectionBoxStart,
+  );
+  const endScreenPos = GameDrawer.normPosToScreenPos(
+    fullscreenCanvas,
+    userInteractionInfo.selectionBoxEnd,
+  );
+
+  return {
+    x: Math.min(startScreenPos.x, endScreenPos.x),
+    y: Math.min(startScreenPos.y, endScreenPos.y),
+    width: Math.abs(endScreenPos.x - startScreenPos.x),
+    height: Math.abs(endScreenPos.y - startScreenPos.y),
+  };
+}
+
+function rectsOverlap(rectA, rectB) {
+  return (
+    rectA.x < rectB.x + rectB.width &&
+    rectA.x + rectA.width > rectB.x &&
+    rectA.y < rectB.y + rectB.height &&
+    rectA.y + rectA.height > rectB.y
+  );
+}
+
+function updateSelectionFromBox() {
+  if (deviceInfo.role != DeviceRole.Host) {
+    return;
+  }
+
+  const selectionRect = getSelectionBoxRect();
+  if (!selectionRect) {
+    setSelectedCardUids([]);
+    return;
+  }
+
+  const selectedCardUids = [];
+  for (const gameCard of gameState.gameCards) {
+    if (gameCard.deviceId != DeviceIdCatalogue.Board) {
+      continue;
+    }
+
+    const cardRect = GameDrawer.getCardScreenRect(
+      fullscreenCanvas,
+      gameCard,
+      null,
+      true,
+    );
+    if (
+      rectsOverlap(selectionRect, {
+        x: cardRect.x,
+        y: cardRect.y,
+        width: cardRect.screenSize.x,
+        height: cardRect.screenSize.y,
+      })
+    ) {
+      selectedCardUids.push(gameCard.uid);
+    }
+  }
+
+  setSelectedCardUids(selectedCardUids);
 }
 
 function getClosestVisibleCard(normPos) {
@@ -139,10 +303,11 @@ function ensureLookDragPreviewElement() {
   img.style.display = "none";
   img.style.width = "auto";
   img.style.height = `${Math.round(GameDrawer.imgHeightPx * 1.85)}px`;
-  img.style.borderRadius = "0.7rem";
-  img.style.boxShadow = "0 0 24px rgba(0, 0, 0, 0.55)";
-  img.style.backgroundColor = "rgba(255, 255, 255, 0.03)";
-  img.style.backdropFilter = "blur(1px)";
+  img.style.borderRadius = "0";
+  img.style.boxShadow = "none";
+  img.style.backgroundColor = "transparent";
+  img.style.backdropFilter = "none";
+  img.style.filter = "drop-shadow(0 0 24px rgba(0, 0, 0, 0.55))";
   document.body.appendChild(img);
 
   lookDragPreviewElement = img;
@@ -165,19 +330,25 @@ function setLookDragPreviewFromCard(gameCard, normPos) {
     return;
   }
 
-  const imageUrl = deck.imageUrls[gameCard.deckCardIndex];
+  const imageUrl = gameCard.faceUp
+    ? deck.imageUrls[gameCard.deckCardIndex]
+    : deck.backPreviewUrl ?? deck.backImageUrl;
   if (!imageUrl) {
     preview.style.display = "none";
     userInteractionInfo.lookPreviewCardUid = null;
     return;
   }
 
-  if (userInteractionInfo.lookPreviewCardUid != gameCard.uid) {
+  if (userInteractionInfo.lookPreviewImageKey != imageUrl) {
     preview.src = imageUrl;
-    userInteractionInfo.lookPreviewCardUid = gameCard.uid;
+    userInteractionInfo.lookPreviewImageKey = imageUrl;
   }
 
-  const cardImage = deck.images[gameCard.deckCardIndex];
+  userInteractionInfo.lookPreviewCardUid = gameCard.uid;
+
+  const cardImage = gameCard.faceUp
+    ? deck.images[gameCard.deckCardIndex]
+    : deck.backImage;
   const previewHeight = Math.round(GameDrawer.imgHeightPx * 1.85);
   const aspectRatio =
     cardImage && cardImage.height ? cardImage.width / cardImage.height : 0.72;
@@ -207,12 +378,40 @@ function setLookDragPreviewFromCard(gameCard, normPos) {
 
 function clearLookDragPreview() {
   userInteractionInfo.lookPreviewCardUid = null;
+  userInteractionInfo.lookPreviewImageKey = null;
   if (lookDragPreviewElement) {
     lookDragPreviewElement.style.display = "none";
   }
 }
 
+function cancelUserInteraction({ clearSelection = false } = {}) {
+  clearSelectionBox();
+  userInteractionInfo.dragStart = null;
+  userInteractionInfo.dragNewPos = null;
+  userInteractionInfo.dragCardStartPos = null;
+  userInteractionInfo.dragCardStartPosByUid = new Map();
+  userInteractionInfo.dragCurrScreenNormPos = null;
+  userInteractionInfo.selectedGameCard = null;
+  userInteractionInfo.lookDragActive = false;
+  clearLookDragPreview();
+
+  if (clearSelection) {
+    setSelectedCardUids([]);
+  }
+
+  fullscreenCanvas.style.cursor = "default";
+  gameState.redraw();
+}
+
 function mouseDown(event) {
+  if (event.button === 2) {
+    return;
+  }
+
+  if (typeof closeCardContextMenu === "function") {
+    closeCardContextMenu();
+  }
+
   preventBrowserGestureWhileDragging(event);
 
   if (event.type.startsWith("touch") && event.cancelable) {
@@ -220,14 +419,60 @@ function mouseDown(event) {
   }
 
   const normPos = normPosFromEvent(event);
+  userInteractionInfo.dragCurrScreenNormPos = normPos;
   const gameCard = GameDrawer.getCardAt(fullscreenCanvas, gameState, normPos);
 
   userInteractionInfo.dragStart = normPos;
+  userInteractionInfo.dragNewPos = null;
+
+  if (deviceInfo.role == DeviceRole.Host) {
+    userInteractionInfo.lookDragActive = false;
+    clearLookDragPreview();
+    clearSelectionBox();
+
+    if (gameCard) {
+      const selectedCards = getHostSelectedCards();
+      const shouldDragSelection =
+        userInteractionInfo.selectedCardUids.has(gameCard.uid) &&
+        selectedCards.length > 1;
+      const draggedCards = shouldDragSelection ? selectedCards : [gameCard];
+
+      setSelectedCardUids(draggedCards.map((card) => card.uid));
+      userInteractionInfo.selectedGameCard = gameCard;
+      userInteractionInfo.dragCardStartPos = GameDrawer.getCardPosition(
+        fullscreenCanvas,
+        gameCard,
+      );
+      userInteractionInfo.dragCardStartPosByUid = new Map(
+        draggedCards.map((card) => [
+          card.uid,
+          GameDrawer.getCardPosition(fullscreenCanvas, card),
+        ]),
+      );
+      userInteractionInfo.lastDragSyncTime = 0;
+
+      raiseCardsToTop(draggedCards);
+      fullscreenCanvas.style.cursor = "grabbing";
+      gameState.redraw();
+    } else {
+      userInteractionInfo.selectedGameCard = null;
+      userInteractionInfo.dragCardStartPos = null;
+      userInteractionInfo.dragCardStartPosByUid = new Map();
+      userInteractionInfo.selectionBoxStart = normPos;
+      userInteractionInfo.selectionBoxEnd = normPos;
+      userInteractionInfo.isSelecting = true;
+      setSelectedCardUids([]);
+      fullscreenCanvas.style.cursor = "crosshair";
+      gameState.redraw();
+    }
+
+    return;
+  }
+
   userInteractionInfo.lookDragActive = !gameCard;
 
   if (gameCard) {
     userInteractionInfo.selectedGameCard = gameCard;
-    userInteractionInfo.selectedGameCardCopy = gameCard.copy();
     userInteractionInfo.dragCardStartPos = GameDrawer.getCardPosition(
       fullscreenCanvas,
       gameCard,
@@ -236,6 +481,7 @@ function mouseDown(event) {
 
     gameCard.layerIndex = gameState.maxLayerIndex + 1;
     fullscreenCanvas.style.cursor = "grabbing";
+    gameState.redraw();
   } else {
     clearLookDragPreview();
     fullscreenCanvas.style.cursor = "zoom-in";
@@ -246,17 +492,29 @@ function mouseMove(event) {
   preventBrowserGestureWhileDragging(event);
 
   const normPos = normPosFromEvent(event);
+  userInteractionInfo.dragCurrScreenNormPos = normPos;
 
-  if (userInteractionInfo.dragStart && userInteractionInfo.selectedGameCard) {
+  if (deviceInfo.role == DeviceRole.Host && userInteractionInfo.isSelecting) {
+    userInteractionInfo.selectionBoxEnd = normPos;
+    updateSelectionFromBox();
+    fullscreenCanvas.style.cursor = "crosshair";
+    gameState.redraw();
+  } else if (userInteractionInfo.dragStart && userInteractionInfo.selectedGameCard) {
     const moveDelta = normPos.sub(userInteractionInfo.dragStart);
-    const newPos = userInteractionInfo.dragCardStartPos.add(moveDelta);
-    userInteractionInfo.dragNewPos = newPos;
+    if (deviceInfo.role == DeviceRole.Host) {
+      userInteractionInfo.dragNewPos =
+        userInteractionInfo.dragCardStartPos.add(moveDelta);
+      makeHostSelectedCardsMove(moveDelta);
+    } else {
+      const newPos = userInteractionInfo.dragCardStartPos.add(moveDelta);
+      userInteractionInfo.dragNewPos = newPos;
 
-    makeCardMove(
-      userInteractionInfo.selectedGameCard,
-      userInteractionInfo.dragCardStartPos,
-      userInteractionInfo.dragNewPos,
-    );
+      makeCardMove(
+        userInteractionInfo.selectedGameCard,
+        userInteractionInfo.dragCardStartPos,
+        userInteractionInfo.dragNewPos,
+      );
+    }
 
     fullscreenCanvas.style.cursor = "grabbing";
   } else if (
@@ -275,7 +533,18 @@ function mouseMove(event) {
 function mouseUp(event) {
   preventBrowserGestureWhileDragging(event);
 
-  if (
+  if (deviceInfo.role == DeviceRole.Host) {
+    if (
+      userInteractionInfo.dragStart &&
+      userInteractionInfo.dragNewPos &&
+      userInteractionInfo.selectedGameCard
+    ) {
+      const moveDelta = userInteractionInfo.dragNewPos.sub(
+        userInteractionInfo.dragCardStartPos,
+      );
+      makeHostSelectedCardsMove(moveDelta, { forceSync: true });
+    }
+  } else if (
     userInteractionInfo.dragStart &&
     userInteractionInfo.dragNewPos &&
     userInteractionInfo.selectedGameCard
@@ -288,13 +557,7 @@ function mouseUp(event) {
     );
   }
 
-  userInteractionInfo.dragStart = null;
-  userInteractionInfo.dragNewPos = null;
-  userInteractionInfo.dragCardStartPos = null;
-  userInteractionInfo.selectedGameCard = null;
-  userInteractionInfo.selectedGameCardCopy = null;
-  userInteractionInfo.lookDragActive = false;
-  clearLookDragPreview();
+  cancelUserInteraction();
 }
 
 fullscreenCanvas.style.touchAction = "none";

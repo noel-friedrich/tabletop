@@ -1,11 +1,14 @@
 class GameDrawer {
   static imgHeightPx = 150;
+  static cardRenderPadding = 0.05;
   static drawCount = null;
   static lastDrawTimestampMs = Date.now();
   static hostHiddenTargetNormPos = new Vector2d(0.5, -0.5);
   static hostHiddenTransitionPositionByUid = new Map();
   static privateOutlineMaskCache = new Map();
   static cardHitAlphaCache = new Map();
+  static selectionOutlineColor = "#0000ff";
+  static selectionFillColor = "rgba(0, 0, 255, 0.14)";
 
   static getLocalNormPos(pos) {
     if (deviceInfo.role == DeviceRole.Host) {
@@ -96,6 +99,10 @@ class GameDrawer {
   static isCardPixelOpaque(gameCard, relX, relY) {
     if (relX < 0 || relX > 1 || relY < 0 || relY > 1) {
       return false;
+    }
+
+    if (!gameCard.faceUp) {
+      return true;
     }
 
     const alphaCache = this.getCardHitAlphaCache(gameCard);
@@ -237,41 +244,93 @@ class GameDrawer {
   }
 
   static drawPrivateCardOutline(canvas, context, gameCard) {
-    const deck = cardDecks.getDeckByName(gameCard.deckName);
-    const img = deck.images[gameCard.deckCardIndex];
-    const mask = this.getPrivateOutlineMask(gameCard);
     const position = this.getCardPosition(canvas, gameCard);
-    const screenPos = this.normPosToScreenPos(canvas, position);
-    const imgSize = new Vector2d(img.width / img.height, 1)
-      .scale(this.imgHeightPx)
-      .round();
+    this.drawCardOutline(canvas, context, gameCard, position, {
+      color: "rgba(0, 0, 0, 0.72)",
+      lineWidth: 4,
+    });
+  }
 
-    const x = screenPos.x - imgSize.x / 2;
-    const y = screenPos.y - imgSize.y / 2;
-    const offsets = [
-      [-4, 0],
-      [4, 0],
-      [0, -4],
-      [0, 4],
-      [-3.5, -3.5],
-      [3.5, -3.5],
-      [-3.5, 3.5],
-      [3.5, 3.5],
-    ];
+  static drawRoundedRectPath(context, x, y, width, height, radius) {
+    const limitedRadius = Math.min(radius, width / 2, height / 2);
+
+    context.beginPath();
+    context.moveTo(x + limitedRadius, y);
+    context.lineTo(x + width - limitedRadius, y);
+    context.quadraticCurveTo(x + width, y, x + width, y + limitedRadius);
+    context.lineTo(x + width, y + height - limitedRadius);
+    context.quadraticCurveTo(
+      x + width,
+      y + height,
+      x + width - limitedRadius,
+      y + height,
+    );
+    context.lineTo(x + limitedRadius, y + height);
+    context.quadraticCurveTo(x, y + height, x, y + height - limitedRadius);
+    context.lineTo(x, y + limitedRadius);
+    context.quadraticCurveTo(x, y, x + limitedRadius, y);
+    context.closePath();
+  }
+
+  static getCardScreenRect(canvas, gameCard, position = null, trimPadding = false) {
+    const cardPosition = position ?? this.getCardPosition(canvas, gameCard);
+    const normSize = this.getCardNormSize(canvas, gameCard);
+    const screenPos = this.normPosToScreenPos(canvas, cardPosition);
+    let screenSize = normSize.mul(this.getCanvasSize(canvas));
+
+    if (trimPadding) {
+      screenSize = screenSize.scale(1 - this.cardRenderPadding * 2);
+    }
+
+    return {
+      screenPos,
+      screenSize,
+      x: screenPos.x - screenSize.x / 2,
+      y: screenPos.y - screenSize.y / 2,
+    };
+  }
+
+  static drawCardOutline(
+    canvas,
+    context,
+    gameCard,
+    position = null,
+    { color = "#000", lineWidth = 3 } = {},
+  ) {
+    const { x, y, screenSize } = this.getCardScreenRect(
+      canvas,
+      gameCard,
+      position,
+      true,
+    );
 
     context.save();
-    context.globalAlpha = 0.85;
-    for (const [dx, dy] of offsets) {
-      context.drawImage(mask, x + dx, y + dy, imgSize.x, imgSize.y);
-    }
+    context.strokeStyle = color;
+    context.lineWidth = lineWidth;
+    this.drawRoundedRectPath(context, x, y, screenSize.x, screenSize.y, 10);
+    context.stroke();
     context.restore();
+  }
+
+  static getCardBackBitmap(gameCard) {
+    const deck = cardDecks.getDeckByName(gameCard.deckName);
+    return deck.backImage ?? deck.images[gameCard.deckCardIndex];
+  }
+
+  static drawCardBack(canvas, context, gameCard, position) {
+    const backImage = this.getCardBackBitmap(gameCard);
+    this.drawImage(canvas, context, backImage, position);
   }
 
   static drawGameCard(canvas, context, gameCard) {
     const deck = cardDecks.getDeckByName(gameCard.deckName);
     const img = deck.images[gameCard.deckCardIndex];
     const position = this.getCardPosition(canvas, gameCard);
-    this.drawImage(canvas, context, img, position);
+    if (gameCard.faceUp) {
+      this.drawImage(canvas, context, img, position);
+    } else {
+      this.drawCardBack(canvas, context, gameCard, position);
+    }
   }
 
   static getLookDragPreviewCard(canvas, gameState) {
@@ -295,16 +354,7 @@ class GameDrawer {
   }
 
   static drawLookDragPreview(canvas, context, gameState) {
-    const previewCard = this.getLookDragPreviewCard(canvas, gameState);
-    if (!previewCard) {
-      return false;
-    }
-
-    const deck = cardDecks.getDeckByName(previewCard.deckName);
-    const img = deck.images[previewCard.deckCardIndex];
-    const position = this.getCardPosition(canvas, previewCard);
-    this.drawImageWithScale(canvas, context, img, position, 1.24);
-    return true;
+    return false;
   }
 
   static drawBackground(canvas, context) {
@@ -320,6 +370,82 @@ class GameDrawer {
     }
   }
 
+  static drawHighlightedPileBackdrop(canvas, context, gameState) {
+    if (typeof cardUiState !== "undefined") {
+      for (const gameCard of gameState.gameCards) {
+        if (!cardUiState.highlightedCardUids.has(gameCard.uid)) {
+          continue;
+        }
+
+        this.drawCardOutline(canvas, context, gameCard, null, {
+          color: this.selectionOutlineColor,
+          lineWidth: 5,
+        });
+      }
+    }
+  }
+
+  static drawHighlightedSelectedCardBackdrop(canvas, context, gameState) {
+    if (typeof userInteractionInfo === "undefined") {
+      return new Set();
+    }
+
+    const highlightedCardUids = new Set(userInteractionInfo.selectedCardUids ?? []);
+    if (userInteractionInfo.selectedGameCard) {
+      highlightedCardUids.add(userInteractionInfo.selectedGameCard.uid);
+    }
+
+    if (highlightedCardUids.size == 0) {
+      return highlightedCardUids;
+    }
+
+    for (const gameCard of gameState.gameCards) {
+      if (!highlightedCardUids.has(gameCard.uid)) {
+        continue;
+      }
+
+      this.drawCardOutline(canvas, context, gameCard, null, {
+        color: this.selectionOutlineColor,
+        lineWidth: 5,
+      });
+    }
+
+    return highlightedCardUids;
+  }
+
+  static drawSelectionBox(canvas, context) {
+    if (
+      deviceInfo.role != DeviceRole.Host ||
+      typeof userInteractionInfo === "undefined" ||
+      !userInteractionInfo.isSelecting ||
+      !userInteractionInfo.selectionBoxStart ||
+      !userInteractionInfo.selectionBoxEnd
+    ) {
+      return;
+    }
+
+    const startPos = this.normPosToScreenPos(
+      canvas,
+      userInteractionInfo.selectionBoxStart,
+    );
+    const endPos = this.normPosToScreenPos(
+      canvas,
+      userInteractionInfo.selectionBoxEnd,
+    );
+    const x = Math.min(startPos.x, endPos.x);
+    const y = Math.min(startPos.y, endPos.y);
+    const width = Math.abs(endPos.x - startPos.x);
+    const height = Math.abs(endPos.y - startPos.y);
+
+    context.save();
+    context.fillStyle = this.selectionFillColor;
+    context.strokeStyle = this.selectionOutlineColor;
+    context.lineWidth = 2;
+    context.fillRect(x, y, width, height);
+    context.strokeRect(x, y, width, height);
+    context.restore();
+  }
+
   static drawGameState(canvas, context, gameState) {
     if (gameState.drawCount === this.drawCount) {
       return;
@@ -332,15 +458,30 @@ class GameDrawer {
     // order is not relevant otherwise, so we can use index as a layer index
     gameState.gameCards.sort((a, b) => a.layerIndex - b.layerIndex);
 
+    this.drawHighlightedPileBackdrop(canvas, context, gameState);
+    const selectedCardUids = new Set(
+      typeof userInteractionInfo === "undefined"
+        ? []
+        : [
+            ...(userInteractionInfo.selectedCardUids ?? []),
+            ...(userInteractionInfo.selectedGameCard
+              ? [userInteractionInfo.selectedGameCard.uid]
+              : []),
+          ],
+    );
+
     if (deviceInfo.role == DeviceRole.Client) {
       const regularCards = [];
       const privateCards = [];
+      const selectedRegularCards = [];
+      const selectedPrivateCards = [];
 
       for (const gameCard of gameState.gameCards) {
+        const isSelected = selectedCardUids.has(gameCard.uid);
         if (gameCard.deviceId == deviceInfo.id) {
-          privateCards.push(gameCard);
+          (isSelected ? selectedPrivateCards : privateCards).push(gameCard);
         } else {
-          regularCards.push(gameCard);
+          (isSelected ? selectedRegularCards : regularCards).push(gameCard);
         }
       }
 
@@ -355,11 +496,42 @@ class GameDrawer {
       for (const gameCard of privateCards) {
         this.drawGameCard(canvas, context, gameCard);
       }
+
+      this.drawHighlightedSelectedCardBackdrop(canvas, context, gameState);
+
+      for (const gameCard of selectedRegularCards) {
+        this.drawGameCard(canvas, context, gameCard);
+      }
+
+      for (const gameCard of selectedPrivateCards) {
+        this.drawPrivateCardOutline(canvas, context, gameCard);
+      }
+
+      for (const gameCard of selectedPrivateCards) {
+        this.drawGameCard(canvas, context, gameCard);
+      }
     } else {
+      const regularCards = [];
+      const selectedCards = [];
+
       for (const gameCard of gameState.gameCards) {
+        (selectedCardUids.has(gameCard.uid) ? selectedCards : regularCards).push(
+          gameCard,
+        );
+      }
+
+      for (const gameCard of regularCards) {
+        this.drawGameCard(canvas, context, gameCard);
+      }
+
+      this.drawHighlightedSelectedCardBackdrop(canvas, context, gameState);
+
+      for (const gameCard of selectedCards) {
         this.drawGameCard(canvas, context, gameCard);
       }
     }
+
+    this.drawSelectionBox(canvas, context);
 
     const hasLookPreview = this.drawLookDragPreview(canvas, context, gameState);
 

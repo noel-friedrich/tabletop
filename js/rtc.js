@@ -2,6 +2,8 @@ const dataMessageType = {
   PING: "ping",
   GAMESTATE: "gamestate",
   MOVE_CARD: "cardmove",
+  UPDATE_CARDS: "cardsupdate",
+  REMOVE_CARDS: "cardsremove",
 };
 
 class Serializable {
@@ -739,15 +741,19 @@ class RtcHostManager {
   }
 
   removeLostConnections() {
+    const lostConnections = [];
+
     // kill connections
     for (const connection of this.connections) {
       if (connection.getStatus().color == "red" && connection.alive) {
         connection.die();
+        lostConnections.push(connection);
       }
     }
 
     // removed refrences to them
     this.connections = this.connections.filter((c) => c.alive);
     rtc.sortConnections();
+    return lostConnections;
   }
 }

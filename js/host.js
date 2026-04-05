@@ -23,6 +23,14 @@ function onHostDataMessage(dataMessage, rtcConnection) {
 
     gameState.redraw();
     syncGamestateToClients();
+  } else if (dataMessage.type == dataMessageType.UPDATE_CARDS) {
+    if (applyCardPatchesLocally(dataMessage.data.patches)) {
+      syncGamestateToClients();
+    }
+  } else if (dataMessage.type == dataMessageType.REMOVE_CARDS) {
+    if (removeCardsByUidLocally(dataMessage.data.uids)) {
+      syncGamestateToClients();
+    }
   } else {
     console.log("unknown data message type", dataMessage.type);
   }
@@ -43,10 +51,11 @@ async function mainHost() {
   initHostMenu();
 
   await cardDecks.loadAll();
+  refreshCardSizePreviewImages();
   console.log("loaded carddecks.");
 
-  const currDeck = cardDecks.getDeckByName("skat");
-  gameState.addDeck(currDeck);
+  const skat = cardDecks.getDeckByName("skat");
+  gameState.addDeck(skat);
 
   drawLoop();
 
@@ -85,7 +94,10 @@ async function mainHost() {
   rtc.start();
 
   setInterval(() => {
-    rtc.removeLostConnections();
+    const lostConnections = rtc.removeLostConnections();
+    reclaimCardsForDisconnectedDevices(
+      lostConnections.map((connection) => `client-${connection.index}`),
+    );
     updateRtcConnectionsTable();
     syncGamestateToClients();
   }, 1000);

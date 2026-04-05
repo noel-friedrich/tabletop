@@ -6,6 +6,7 @@
 const cardDeckInfos = [
   {
     name: "french",
+    back_image_url: "back.svg",
     image_urls: [
       "02_clubs.svg",
       "02_diamonds.svg",
@@ -63,6 +64,7 @@ const cardDeckInfos = [
   },
   {
     name: "skat",
+    back_image_url: "back.svg",
     image_urls: [
       "07_clubs.svg",
       "07_diamonds.svg",

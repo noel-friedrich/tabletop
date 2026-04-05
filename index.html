@@ -70,6 +70,28 @@
                             <span lang="de">Karten hinzufÃ¼gen</span>
                         </legend>
 
+                        <p class="menu-note host-deck-controls-summary">
+                            <span lang="en"
+                                >Add full decks, reset the table, or open the
+                                French card wall when you need it.</span
+                            >
+                            <span lang="de"
+                                >FÃ¼ge ganze Decks hinzu, setze den Tisch
+                                zurÃ¼ck oder Ã¶ffne bei Bedarf die
+                                franzÃ¶sische Kartenwand.</span
+                            >
+                        </p>
+                        <button
+                            id="host-deck-controls-toggle"
+                            class="host-deck-controls-toggle"
+                            type="button"
+                            aria-expanded="false"
+                            aria-controls="host-deck-controls"
+                        >
+                            <span lang="en">Show Card Tools</span>
+                            <span lang="de">Kartenwerkzeuge zeigen</span>
+                        </button>
+
                         <div
                             id="host-deck-controls"
                             style="
@@ -77,11 +99,14 @@
                                 grid-template-columns: 1fr;
                                 gap: 0.6rem;
                             "
+                            hidden
                         >
                             <div class="host-card-studio-copy">
                                 <h2>
                                     <span lang="en">Build the Table</span>
-                                    <span lang="de">Tisch schnell aufbauen</span>
+                                    <span lang="de"
+                                        >Tisch schnell aufbauen</span
+                                    >
                                 </h2>
                                 <p>
                                     <span lang="en"
@@ -93,9 +118,9 @@
                                     <span lang="de"
                                         >Tippe eine franzÃ¶sische Karte an, um
                                         genau diese Karte auf einen zufÃ¤lligen
-                                        Platz auf dem Tisch zu werfen. FÃ¼r ganze
-                                        Decks oder zum AufrÃ¤umen gibt es die
-                                        Buttons darunter.</span
+                                        Platz auf dem Tisch zu werfen. FÃ¼r
+                                        ganze Decks oder zum AufrÃ¤umen gibt es
+                                        die Buttons darunter.</span
                                     >
                                 </p>
                             </div>
@@ -338,7 +363,7 @@
                 </div>
             </div>
         </div>
-
+        
         <style>
             .custom-alert-container {
                 position: fixed;
@@ -354,59 +379,53 @@
                 pointer-events: none;
                 transition: 300ms;
             }
-
-            .custom-alert-container[data-mode="alert"]
-                .button-container:not(.alert) {
+        
+            .custom-alert-container[data-mode="alert"] .button-container:not(.alert) {
                 display: none;
             }
-
-            .custom-alert-container[data-mode="confirm"]
-                .button-container:not(.confirm) {
+        
+            .custom-alert-container[data-mode="confirm"] .button-container:not(.confirm) {
                 display: none;
             }
-
+        
             .custom-alert-container .button-container.confirm {
-                gap: 0.5em;
+                gap: .5em;
             }
-
-            .custom-alert-container.default-yes
-                .button-container.confirm
-                .no-button {
+        
+            .custom-alert-container.default-yes .button-container.confirm .no-button {
                 background-color: white;
                 border: 1px solid #ccc;
                 color: black;
             }
-
-            .custom-alert-container:not(.default-yes)
-                .button-container.confirm
-                .yes-button {
+        
+            .custom-alert-container:not(.default-yes) .button-container.confirm .yes-button {
                 background-color: white;
                 border: 1px solid #ccc;
                 color: black;
             }
-
+        
             .custom-alert-container .header.active {
                 text-align: center;
                 display: block;
                 font-family: var(--header-font);
                 margin: 0;
-                margin-bottom: 0.8rem;
+                margin-bottom: .8rem; 
             }
-
+        
             .custom-alert-container .header:not(.active) {
                 display: none;
             }
-
+        
             .custom-alert-container.active {
                 pointer-events: all;
                 background-color: rgba(0, 0, 0, 0.2);
                 backdrop-filter: blur(2px);
             }
-
+        
             .custom-alert-container:not(.active) .custom-alert-box {
                 display: none;
             }
-
+        
             .custom-alert-container .custom-alert-box {
                 padding: 1.5rem;
                 background-color: white;
@@ -416,96 +435,77 @@
                 box-shadow: 0 0 50px rgba(0, 0, 0, 0.6);
                 font-size: 1.1em;
             }
-
+        
             .custom-alert-container .button-container {
                 width: 100%;
                 display: flex;
-                margin-top: 0.8rem;
+                margin-top: .8rem;
             }
-
+        
             .custom-alert-container .button-container button {
                 background-color: var(--primary-accent-color);
                 color: var(--on-primary-accent-color);
-                padding: 0.5rem;
-                padding-left: 0.8rem;
-                padding-right: 0.8rem;
+                padding: .5rem;
+                padding-left: .8rem;
+                padding-right: .8rem;
                 margin: 0 auto;
-                border-radius: 0.5rem;
+                border-radius: .5rem;
                 font-size: 1.1em;
                 border: none;
                 cursor: pointer;
             }
-
+        
             .custom-alert-container .button-container button:hover {
                 box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
             }
-
+        
             .custom-alert-container .button-container.confirm button {
                 width: 100%;
             }
         </style>
-
+        
         <script>
-            function customAlert(
-                msg,
-                { header = null, confirm = false, defaultYes = true } = {},
-            ) {
+            function customAlert(msg, {header=null, confirm=false, defaultYes=true}={}) {
                 return new Promise((resolve, reject) => {
-                    const alertContainer = document.querySelector(
-                        ".custom-alert-container",
-                    );
-                    alertContainer.classList.add("active");
-                    alertContainer.dataset.mode = confirm ? "confirm" : "alert";
+                    const alertContainer = document.querySelector(".custom-alert-container")
+                    alertContainer.classList.add("active")
+                    alertContainer.dataset.mode = confirm ? "confirm" : "alert"
                     if (defaultYes) {
-                        alertContainer.classList.add("default-yes");
+                        alertContainer.classList.add("default-yes")
                     } else {
-                        alertContainer.classList.remove("default-yes");
+                        alertContainer.classList.remove("default-yes")
                     }
-
-                    const headerElement =
-                        alertContainer.querySelector(".header");
+                    
+                    const headerElement = alertContainer.querySelector(".header")
                     if (header !== null) {
-                        headerElement.classList.add("active");
-                        headerElement.textContent = header;
+                        headerElement.classList.add("active")
+                        headerElement.textContent = header
                     } else {
-                        headerElement.classList.remove("active");
+                        headerElement.classList.remove("active")
                     }
-
-                    const textElement = alertContainer.querySelector(".text");
-                    textElement.textContent = msg;
-
-                    alertContainer
-                        .querySelector(".yes-button")
-                        .addEventListener("click", () => {
-                            alertContainer.classList.remove("active");
-                            resolve(true);
-                        });
-
-                    alertContainer
-                        .querySelector(".no-button")
-                        .addEventListener("click", () => {
-                            alertContainer.classList.remove("active");
-                            resolve(false);
-                        });
-
-                    alertContainer
-                        .querySelector(".continue-button")
-                        .addEventListener("click", () => {
-                            alertContainer.classList.remove("active");
-                            resolve();
-                        });
-                });
+            
+                    const textElement = alertContainer.querySelector(".text")
+                    textElement.textContent = msg
+            
+                    alertContainer.querySelector(".yes-button").addEventListener("click", () => {
+                        alertContainer.classList.remove("active")
+                        resolve(true)
+                    })
+        
+                    alertContainer.querySelector(".no-button").addEventListener("click", () => {
+                        alertContainer.classList.remove("active")
+                        resolve(false)
+                    })
+        
+                    alertContainer.querySelector(".continue-button").addEventListener("click", () => {
+                        alertContainer.classList.remove("active")
+                        resolve()
+                    })
+                })
             }
-
-            async function customConfirm(
-                msg,
-                { defaultYes = true, header = null } = {},
-            ) {
-                return await customAlert(msg, {
-                    header,
-                    defaultYes,
-                    confirm: true,
-                });
+            
+            async function customConfirm(msg, {defaultYes=true, header=null}={}) {
+                return await customAlert(msg, {header, defaultYes, confirm: true})
             }
         </script>
         <!-- END -->
@@ -516,7 +516,7 @@
         </canvas>
 
         <!-- SET js_version=4 -->
-        <!-- SET js_minify=false -->
+        <!-- SET js_minify=true -->
         <!-- JS_IMPORT js/text.js -->
         <!-- JS_IMPORT js/nosleep.js -->
         <!-- JS_IMPORT assets/decks/load_carddeck_info.js -->
@@ -526,27 +526,17 @@
         <!-- JS_IMPORT js/carddeck.js -->
         <!-- JS_IMPORT js/gamestate.js -->
         <!-- JS_IMPORT js/gamedraw.js -->
+        <!-- JS_IMPORT js/card-actions.js -->
         <!-- JS_IMPORT js/menu.js -->
+        <!-- JS_IMPORT js/menu-controls.js -->
         <!-- JS_IMPORT js/host.js -->
         <!-- JS_IMPORT js/client.js -->
         <!-- JS_IMPORT js/main.js -->
         <!-- JS_IMPORT js/user-interaction.js -->
+        <!-- JS_IMPORT js/card-context-menu.js -->
 
         <!-- BEGIN js_imports -->
-        <script src="js/text.js?v4"></script>
-        <script src="js/nosleep.js?v4"></script>
-        <script src="assets/decks/load_carddeck_info.js?v4"></script>
-        <script src="js/rtc.js?v4"></script>
-        <script src="js/vector2d.js?v4"></script>
-        <script src="js/qrcode.js?v4"></script>
-        <script src="js/carddeck.js?v4"></script>
-        <script src="js/gamestate.js?v4"></script>
-        <script src="js/gamedraw.js?v4"></script>
-        <script src="js/menu.js?v4"></script>
-        <script src="js/host.js?v4"></script>
-        <script src="js/client.js?v4"></script>
-        <script src="js/main.js?v4"></script>
-        <script src="js/user-interaction.js?v4"></script>
+        <script src="js/minified/jb13d01bbe96cb7ec.min.js?v4"></script>
         <!-- END -->
     </body>
 </html>

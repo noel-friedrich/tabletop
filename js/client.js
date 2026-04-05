@@ -35,7 +35,25 @@ function onClientDataMessage(dataMessage) {
   }
 }
 
+function setClientStatus(message) {
+  if (clientStatusTitle) {
+    clientStatusTitle.textContent = message;
+  }
+}
+
+function updateClientUrlGameId(gameId) {
+  const nextUrl = new URL(window.location.href);
+  nextUrl.searchParams.set("client", "");
+  nextUrl.searchParams.set("p", gameId);
+  window.history.replaceState({}, "", nextUrl);
+}
+
 async function startClientConnection() {
+  if (!deviceInfo.gameId) {
+    setClientStatus("Enter a game code to connect.");
+    return;
+  }
+
   rtc?.die();
   rtc = new RtcClient({
     logFunction: (message) => {
@@ -44,24 +62,36 @@ async function startClientConnection() {
     onDataMessage: onClientDataMessage,
     onDataClose: () => {
       menuContainer.classList.remove("hidden");
-      clientStatusTitle.textContent = Text.ConnectionFailed;
+      setClientStatus(Text.ConnectionFailed);
       console.log(Text.TryingAgainInSeconds(5));
       setTimeout(startClientConnection, 1 * 2 * 3 * 4 * 5 * 6 * 7); // 7! ~ 5000, fun fact
     },
-    poolUid: urlParams.get("p"),
+    poolUid: deviceInfo.gameId,
   });
 
-  clientStatusTitle.textContent = Text.ConnectingToHost;
+  setClientStatus(Text.ConnectingToHost);
   try {
     await rtc.start();
-    clientStatusTitle.textContent = Text.ConnectedToHost;
+    setClientStatus(Text.ConnectedToHost);
   } catch (err) {
     console.log(Text.CouldNotConnect);
     console.log(`Error-Message: ${err.message}`);
     console.log(Text.TryingAgainInSeconds(10));
-    clientStatusTitle.textContent = Text.ConnectionFailed;
+    setClientStatus(Text.ConnectionFailed);
     return setTimeout(startClientConnection, 10 * 1000);
   }
+}
+
+function joinClientWithGameId(gameId) {
+  const normalizedGameId = `${gameId ?? ""}`.trim();
+  if (!normalizedGameId) {
+    return;
+  }
+
+  writeLocalStorageValue(localStorageGameIdKey, normalizedGameId);
+  deviceInfo.gameId = normalizedGameId;
+  updateClientUrlGameId(normalizedGameId);
+  startClientConnection();
 }
 
 async function mainClient() {
@@ -79,10 +109,15 @@ async function mainClient() {
   initClientMenu(restoredDeviceIndex);
   gameState.redraw();
 
-  await startClientConnection();
-
   await cardDecks.loadAll();
+  refreshCardSizePreviewImages();
   console.log("loaded carddecks.");
 
   drawLoop();
+
+  if (deviceInfo.gameId) {
+    await startClientConnection();
+  } else {
+    setClientStatus("Enter a game code to connect.");
+  }
 }

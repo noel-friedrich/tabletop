@@ -127,6 +127,7 @@ class GameCard extends Serializable {
     layerIndex,
     deviceId,
     uid,
+    faceUp,
   ) {
     super();
     this.normPosition = normPosition ?? Vector2d.zero;
@@ -136,6 +137,7 @@ class GameCard extends Serializable {
     this.layerIndex = layerIndex ?? 0;
     this.deviceId = deviceId ?? deviceInfo.id;
     this.uid = uid ?? generateRandomUid();
+    this.faceUp = faceUp ?? true;
   }
 
   serialize() {
@@ -147,6 +149,7 @@ class GameCard extends Serializable {
       this.layerIndex,
       this.deviceId,
       this.uid,
+      this.faceUp,
     ];
   }
 
@@ -159,6 +162,7 @@ class GameCard extends Serializable {
       serialized[4],
       serialized[5],
       serialized[6],
+      serialized[7],
     );
   }
 
@@ -218,6 +222,7 @@ class GameState extends Serializable {
   }
 
   addDeck(cardDeck, spawnPos = new Vector2d(0.5, 0.5)) {
+    const addedCards = [];
     for (let i = 0; i < cardDeck.size; i++) {
       const offset = Vector2d.unit10.scale((i - cardDeck.size / 2) / 100);
       const gameCard = new GameCard(
@@ -229,7 +234,9 @@ class GameState extends Serializable {
         deviceInfo.id,
       );
       this.gameCards.push(gameCard);
+      addedCards.push(gameCard);
     }
+    return addedCards;
   }
 
   redraw() {

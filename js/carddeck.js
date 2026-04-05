@@ -1,9 +1,13 @@
 class CardDeck {
-  constructor(name, imageUrls) {
+  constructor(name, imageUrls, backImageUrl = null) {
     this.name = name;
     this.imageUrls = imageUrls;
+    this.backImageUrl = backImageUrl;
 
     this.images = imageUrls.map((url) => null);
+    this.backImage = null;
+    this.frontPreviewUrl = null;
+    this.backPreviewUrl = null;
     this.loadedImages = false;
   }
 
@@ -13,46 +17,64 @@ class CardDeck {
       infoObject.image_urls.map(
         (url) => `assets/decks/${encodeURIComponent(infoObject.name)}/${url}`,
       ),
+      infoObject.back_image_url
+        ? `assets/decks/${encodeURIComponent(infoObject.name)}/${infoObject.back_image_url}`
+        : null,
     );
   }
 
+  async loadRasterizedImage(url) {
+    return await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.addEventListener("load", () => {
+        const rasterResolution = GameDrawer.imgHeightPx * 1.5;
+        const rasterSize = new Vector2d(img.naturalWidth / img.naturalHeight, 1)
+          .scale(rasterResolution)
+          .round();
+
+        const offscreenCanvas = new OffscreenCanvas(rasterSize.x, rasterSize.y);
+        const context = offscreenCanvas.getContext("2d");
+
+        const padding = GameDrawer.cardRenderPadding;
+        context.drawImage(
+          img,
+          padding * rasterSize.x,
+          padding * rasterSize.y,
+          rasterSize.x * (1 - padding * 2),
+          rasterSize.y * (1 - padding * 2),
+        );
+        resolve(offscreenCanvas.transferToImageBitmap());
+      });
+      img.addEventListener("error", reject);
+      img.src = url;
+    });
+  }
+
+  makePreviewUrlFromBitmap(bitmap) {
+    if (!bitmap) {
+      return null;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext("2d");
+    context.drawImage(bitmap, 0, 0);
+    return canvas.toDataURL("image/png");
+  }
+
   async load() {
-    await Promise.all(
-      this.imageUrls.map(async (url, i) => {
-        await new Promise((resolve, reject) => {
-          const img = new Image();
-          img.addEventListener("load", () => {
-            // rasterize image to precompute svg calculation
-
-            const rasterResolution = GameDrawer.imgHeightPx * 1.5;
-            const rasterSize = new Vector2d(
-              img.naturalWidth / img.naturalHeight,
-              1,
-            )
-              .scale(rasterResolution)
-              .round();
-
-            const offscreenCanvas = new OffscreenCanvas(
-              rasterSize.x,
-              rasterSize.y,
-            );
-            const context = offscreenCanvas.getContext("2d");
-
-            const padding = 0.05;
-            context.drawImage(
-              img,
-              padding * rasterSize.x,
-              padding * rasterSize.y,
-              rasterSize.x * (1 - padding * 2),
-              rasterSize.y * (1 - padding * 2),
-            );
-            this.images[i] = offscreenCanvas.transferToImageBitmap();
-            resolve();
-          });
-          img.src = url;
-        });
-      }),
+    this.images = await Promise.all(
+      this.imageUrls.map((url) => this.loadRasterizedImage(url)),
     );
+    this.frontPreviewUrl = this.makePreviewUrlFromBitmap(this.images[0] ?? null);
+
+    if (this.backImageUrl) {
+      this.backImage = await this.loadRasterizedImage(this.backImageUrl);
+      this.backPreviewUrl = this.makePreviewUrlFromBitmap(this.backImage);
+    }
+
+    this.loadedImages = true;
   }
 
   get size() {
@@ -70,7 +92,12 @@ class CardDecks {
   }
 
   static fromInfoObjects(infoObjects) {
-    return new CardDecks(infoObjects.map((io) => CardDeck.fromInfoObject(io)));
+    const sortedInfoObjects = [...infoObjects].sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+    return new CardDecks(
+      sortedInfoObjects.map((io) => CardDeck.fromInfoObject(io)),
+    );
   }
 
   getDeckByName(name) {
