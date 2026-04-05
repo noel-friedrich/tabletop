@@ -17,10 +17,6 @@ function onHostDataMessage(dataMessage, rtcConnection) {
       return; // ignore, it's likely an old card that was already removed.
     }
 
-    if (gameCard.deviceId != newDeviceId) {
-      gameCard.setOnlyNormalisedPos(new Vector2d(0.5, -0.5));
-    }
-
     gameCard.setDesiredPos(newPos);
     gameCard.deviceId = newDeviceId;
     gameCard.layerIndex = gameState.maxLayerIndex + 1;

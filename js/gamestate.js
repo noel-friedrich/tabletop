@@ -13,18 +13,51 @@ const deviceInfo = {
   gameId: urlParams.get("p") || null,
 };
 
+const ClientAreaLayout = {
+  splitY: 1 / 2,
+};
+
 function generateRandomUid() {
   return Math.random().toString().slice(2);
+}
+
+function isPrivateAreaVisualY(visualY) {
+  return visualY > ClientAreaLayout.splitY;
+}
+
+function mapClientLocalYToVisualY(localY, deviceId) {
+  const splitY = ClientAreaLayout.splitY;
+
+  if (deviceId == DeviceIdCatalogue.Board) {
+    return localY * splitY;
+  } else if (deviceId == deviceInfo.id) {
+    return splitY + localY * (1 - splitY);
+  } else {
+    return -0.5;
+  }
+}
+
+function mapClientVisualYToLocalY(visualY, deviceId) {
+  const splitY = ClientAreaLayout.splitY;
+
+  if (deviceId == DeviceIdCatalogue.Board) {
+    return visualY / splitY;
+  } else if (deviceId == deviceInfo.id) {
+    return (visualY - splitY) / (1 - splitY);
+  } else {
+    return -0.5;
+  }
 }
 
 function getVisualNormPosForDevicePerspective(card, localNormPos) {
   const normPos = localNormPos.copy();
 
   if (deviceInfo.role == DeviceRole.Client) {
-    if (card.deviceId == DeviceIdCatalogue.Board) {
-      normPos.y *= 2 / 3;
-    } else if (card.deviceId == deviceInfo.id) {
-      normPos.y = (2 + normPos.y) / 3;
+    if (
+      card.deviceId == DeviceIdCatalogue.Board ||
+      card.deviceId == deviceInfo.id
+    ) {
+      normPos.y = mapClientLocalYToVisualY(normPos.y, card.deviceId);
     } else {
       normPos.x = 0.5;
       normPos.y = -0.5;
@@ -44,10 +77,11 @@ function getLocalNormPosFromVisualForDevice(deviceId, visualNormPos) {
     return visualNormPos.copy();
   }
 
-  if (deviceId == DeviceIdCatalogue.Board) {
-    return new Vector2d(visualNormPos.x, (visualNormPos.y * 3) / 2);
-  } else if (deviceId == deviceInfo.id) {
-    return new Vector2d(visualNormPos.x, visualNormPos.y * 3 - 2);
+  if (deviceId == DeviceIdCatalogue.Board || deviceId == deviceInfo.id) {
+    return new Vector2d(
+      visualNormPos.x,
+      mapClientVisualYToLocalY(visualNormPos.y, deviceId),
+    );
   } else {
     return new Vector2d(0.5, -0.5);
   }
@@ -203,6 +237,10 @@ class GameState extends Serializable {
   }
 
   get maxLayerIndex() {
+    if (this.gameCards.length == 0) {
+      return -1;
+    }
+
     return Math.max(...this.gameCards.map((c) => c.layerIndex));
   }
 }

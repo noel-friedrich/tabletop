@@ -1,0 +1,11 @@
+[ ] add a field to input the game code on the website to join a game without a qr code
+[ ] add flipped over cards
+[ ] add ability to make shuffled stacks (of flipped over cards), as many games need those
+[X] add better deck choice
+[ ] add button to give one hand one random card from a stack to each player (add the ability to make stacks even!)
+[ ] what happens if a player leaves the game and still has hand cards? where do they go?
+[ ] add option to change card size
+[ ] make menu look nicer on client, add basic options and explanation text to both menus
+[ ] restructure code into nicer units
+[ ] add option to remove cards by right clicking (opening a small context menu and highlighting them)
+[ ] cards being dragged should have a blue (#0000ff) outline while being dragged
