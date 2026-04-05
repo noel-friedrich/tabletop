@@ -246,6 +246,10 @@ function renderContextMenuEntries(entries, { clientX, clientY }) {
   menu.style.top = `${Math.round(top)}px`;
 }
 
+function formatContextMenuCountLabel(label, count) {
+  return `${label} (${count})`;
+}
+
 function openCardContextMenu({ anchorCard, clientX, clientY }) {
   if (!anchorCard) {
     return closeCardContextMenu();
@@ -292,7 +296,7 @@ function openCardContextMenu({ anchorCard, clientX, clientY }) {
     });
     if (allowDelete) {
       entries.push({
-        label: "Delete pile",
+        label: formatContextMenuCountLabel("Delete Pile", pileCardUids.length),
         run: () => requestRemoveCards(pileCardUids),
         danger: true,
       });
@@ -344,6 +348,9 @@ function openHostBlankContextMenu({ clientX, clientY, spawnNormPos }) {
     return closeCardContextMenu();
   }
 
+  const skatDeck = cardDecks.getDeckByName("skat");
+  const frenchDeck = cardDecks.getDeckByName("french");
+
   cardContextMenuState.anchorCardUid = null;
   cardContextMenuState.pileCardUids = [];
   clearHighlightedCardUids();
@@ -351,7 +358,7 @@ function openHostBlankContextMenu({ clientX, clientY, spawnNormPos }) {
   renderContextMenuEntries(
     [
       {
-        label: "Spawn Skat Stack",
+        label: formatContextMenuCountLabel("Spawn Skat Stack", skatDeck?.size ?? 0),
         run: () =>
           hostAddDeck("skat", {
             spawnPos: spawnNormPos?.copy?.() ?? null,
@@ -359,7 +366,10 @@ function openHostBlankContextMenu({ clientX, clientY, spawnNormPos }) {
           }),
       },
       {
-        label: "Spawn French Stack",
+        label: formatContextMenuCountLabel(
+          "Spawn French Stack",
+          frenchDeck?.size ?? 0,
+        ),
         run: () =>
           hostAddDeck("french", {
             spawnPos: spawnNormPos?.copy?.() ?? null,
