@@ -9,3 +9,9 @@
 [X] restructure code into nicer units
 [X] add option to remove cards by right clicking (opening a small context menu and highlighting them)
 [X] cards being dragged should have a blue (#0000ff) outline while being dragged
+[ ] connection issue ios papa
+[ ] name input for clients
+[ ] points table
+[ ] distribute evenly odd nums; with 32/3, 2 should stay on board
+[ ] transparently display connection issues/problems
+[ ] make client window inaccessible when there's no active host connection
