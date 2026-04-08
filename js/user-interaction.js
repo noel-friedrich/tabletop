@@ -254,40 +254,6 @@ function updateSelectionFromBox() {
   setSelectedCardUids(selectedCardUids);
 }
 
-function getClosestVisibleCard(normPos) {
-  let bestCard = null;
-  let bestDistance = Infinity;
-
-  for (const gameCard of gameState.gameCards) {
-    const cardPos = GameDrawer.getCardPosition(fullscreenCanvas, gameCard);
-    const cardSize = GameDrawer.getCardNormSize(fullscreenCanvas, gameCard);
-    const halfSize = cardSize.scale(0.5);
-
-    const isVisible =
-      cardPos.x + halfSize.x >= 0 &&
-      cardPos.x - halfSize.x <= 1 &&
-      cardPos.y + halfSize.y >= 0 &&
-      cardPos.y - halfSize.y <= 1;
-
-    if (!isVisible) {
-      continue;
-    }
-
-    const distance = cardPos.distance(normPos);
-    if (
-      distance < bestDistance ||
-      (distance == bestDistance &&
-        bestCard &&
-        gameCard.layerIndex > bestCard.layerIndex)
-    ) {
-      bestDistance = distance;
-      bestCard = gameCard;
-    }
-  }
-
-  return bestCard;
-}
-
 function ensureLookDragPreviewElement() {
   if (lookDragPreviewElement) {
     return lookDragPreviewElement;
@@ -521,7 +487,7 @@ function mouseMove(event) {
     userInteractionInfo.dragStart &&
     userInteractionInfo.lookDragActive
   ) {
-    const gameCard = getClosestVisibleCard(normPos);
+    const gameCard = GameDrawer.getCardAt(fullscreenCanvas, gameState, normPos);
     setLookDragPreviewFromCard(gameCard, normPos);
     fullscreenCanvas.style.cursor = gameCard ? "zoom-in" : "default";
   } else {

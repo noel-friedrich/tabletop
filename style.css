@@ -138,7 +138,9 @@ html[lang="de"] :not(html)[lang="en"] {
 }
 
 .open-menu-button,
-.client-hand-action-fab {
+.client-hand-action-fab,
+.host-connection-indicator,
+.client-device-indicator {
     background-color: white;
     z-index: 100;
     box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
@@ -159,6 +161,58 @@ html[lang="de"] :not(html)[lang="en"] {
 .open-menu-button {
     right: 2rem;
     top: 2rem;
+}
+
+.host-connection-indicator {
+    left: 2rem;
+    top: 2rem;
+    min-width: 3rem;
+    min-height: 3rem;
+    padding: 0 0.8rem;
+    border-radius: 999px;
+    display: none;
+    align-items: center;
+    gap: 0.45rem;
+    font-family: "Quicksand";
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: black;
+    cursor: default;
+}
+
+.host-connection-indicator svg {
+    width: 1.05rem;
+    height: 1.05rem;
+    flex: 0 0 auto;
+}
+
+.host-connection-indicator span {
+    line-height: 1;
+}
+
+.client-device-indicator {
+    left: 2rem;
+    top: 2rem;
+    min-width: 3rem;
+    min-height: 3rem;
+    padding: 0 0.8rem;
+    border-radius: 999px;
+    display: none;
+    align-items: center;
+    gap: 0.45rem;
+    font-family: "Quicksand";
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: black;
+    cursor: default;
+}
+
+.board-overlay-indicator-icon {
+    line-height: 1;
+}
+
+.client-device-indicator span:last-child {
+    line-height: 1;
 }
 
 .client-hand-action-fab {
@@ -275,10 +329,26 @@ body:has(.menu-container:not(.hidden)) .open-menu-button {
     transform: translateY(-300%);
 }
 
+body:has(.menu-container:not(.hidden)) .host-connection-indicator {
+    transform: translateY(-300%);
+}
+
+body:has(.menu-container:not(.hidden)) .client-device-indicator {
+    transform: translateY(-300%);
+}
+
 body:has(.menu-container:not(.hidden)) .client-hand-action-fab,
 body:has(.menu-container:not(.hidden)) .client-hand-action-menu {
     transform: translateY(320%);
     pointer-events: none;
+}
+
+body:has(.menu-container.host) .host-connection-indicator:not([hidden]) {
+    display: flex;
+}
+
+body:has(.menu-container.client) .client-device-indicator:not([hidden]) {
+    display: flex;
 }
 
 .menu-overlay {

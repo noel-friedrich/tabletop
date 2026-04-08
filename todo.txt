@@ -15,6 +15,8 @@
 [x] distribute evenly odd nums; with 32/3, 2 should stay on board
 [x] transparently display connection issues/problems
 [x] make client window inaccessible when there's no active host connection
-[ ] little indicator in top corner for board how many players and client id for clients
-[ ] in the card zoom mode, do not show nearest card if cursor isn't above any card
+[x] little indicator in top corner for board how many players and client id for clients
+[x] in the card zoom mode, do not show nearest card if cursor isn't above any card
 [ ] add a little bottom right corner info in grey how many cards your current hand has
+[x] change app name from "Cards Game" to "Tabletop"
+[x] make it so that when a client reloads the site and the connection thus abrupts, the client is able to reconnect and keep their deviceindex without the host having to open the menu (right now, the host only allows new connections if the menu is open. Change it so that if there's a disconnected client that was connected the last time the menu was open, the host allows new connections (thus effectively polling until new connection is made) until all players are connected again). Avoid unnecessary polling calls to prevent server overload definitely.

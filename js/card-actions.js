@@ -71,6 +71,25 @@ function getSortedPrivateCards() {
     });
 }
 
+function getPrivateCardsOrderedForLineLayout() {
+  return gameState.gameCards
+    .filter((card) => card.deviceId == deviceInfo.id)
+    .sort((a, b) => {
+      const aPos = getCardVisualPos(a);
+      const bPos = getCardVisualPos(b);
+
+      if (aPos.x != bPos.x) {
+        return aPos.x - bPos.x;
+      }
+
+      if (aPos.y != bPos.y) {
+        return aPos.y - bPos.y;
+      }
+
+      return a.layerIndex - b.layerIndex;
+    });
+}
+
 function linePositionsForHand(
   cardCount,
   { startX = 0.16, endX = 0.84, y = null } = {},
@@ -162,6 +181,30 @@ function arrangeClientHand({
   requestCardPatches(patches);
 }
 
+function takePileToPrivateArea(cards) {
+  if (deviceInfo.role != DeviceRole.Client || !cards || cards.length == 0) {
+    return;
+  }
+
+  const pileCards = [...cards].sort((a, b) => a.layerIndex - b.layerIndex);
+  const pileCardUids = new Set(pileCards.map((card) => card.uid));
+  const orderedPrivateCards = getPrivateCardsOrderedForLineLayout().filter(
+    (card) => !pileCardUids.has(card.uid),
+  );
+  const combinedCards = [...orderedPrivateCards, ...pileCards];
+  const targets = linePositionsForHand(combinedCards.length);
+
+  const patches = combinedCards.map((card, index) => ({
+    uid: card.uid,
+    to: GameDrawer.getLocalNormPos(targets[index]),
+    deviceId: deviceInfo.id,
+    layerIndex: gameState.maxLayerIndex + index + 1,
+    faceUp: true,
+  }));
+
+  requestCardPatches(patches);
+}
+
 function getSortedAllCards() {
   return [...gameState.gameCards].sort((a, b) => {
     if (a.deckName != b.deckName) {
@@ -200,7 +243,13 @@ function getHostDistributionDeviceIds() {
 
   if (rtc?.connections) {
     for (const connection of rtc.connections) {
-      ids.push(`client-${connection.index}`);
+      if (!connection?.alive || connection.getStatus?.().color == "red") {
+        continue;
+      }
+
+      if (connection.deviceId) {
+        ids.push(connection.deviceId);
+      }
     }
   }
 

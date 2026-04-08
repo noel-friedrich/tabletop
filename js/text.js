@@ -39,6 +39,18 @@ const Text = {
     [Lang.EN]: "❌ Could not connect to Host.",
     [Lang.DE]: "❌ Verbindung fehlgeschlagen.",
   },
+  JoinRejectedNeedsHostMenu: {
+    [Lang.EN]:
+      "Host is not accepting this device right now. Open the host menu to join as a new player.",
+    [Lang.DE]:
+      "Der Host akzeptiert dieses Geraet gerade nicht. Oeffne das Host-Menue, um als neues Geraet beizutreten.",
+  },
+  JoinRejectedSlotUnavailable: {
+    [Lang.EN]:
+      "That player slot is already in use. Wait for the other device to disconnect or open the host menu.",
+    [Lang.DE]:
+      "Dieser Spielerplatz ist bereits belegt. Warte auf die Trennung des anderen Geraets oder oeffne das Host-Menue.",
+  },
   CreatedPool: (poolUid) => ({
     [Lang.EN]: `✅ Created Game (${poolUid})`,
     [Lang.DE]: `✅ Spiel erstellt (${poolUid})`,

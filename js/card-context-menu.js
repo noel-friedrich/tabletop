@@ -290,6 +290,13 @@ function openCardContextMenu({ anchorCard, clientX, clientY }) {
   }
 
   if (pileCards.length > 1) {
+    if (deviceInfo.role == DeviceRole.Client) {
+      entries.push({
+        label: "Take entire pile",
+        run: () => takePileToPrivateArea(pileCards),
+      });
+    }
+
     entries.push({
       label: "Flip entire stack",
       run: () => togglePileFaceUp(pileCards),

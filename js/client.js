@@ -130,8 +130,8 @@ function onClientDataMessage(dataMessage) {
     // send ping back and get deviceindex from ping
     if (deviceInfo.deviceIndex != dataMessage.data.index) {
       deviceInfo.deviceIndex = parseInt(dataMessage.data.index);
-      deviceInfo.id = `client-${dataMessage.data.index}`;
       localStorage.setItem(localStorageDeviceIndexKey, deviceInfo.deviceIndex);
+      updateClientDeviceIndicator();
       gameState.redraw();
     }
 
@@ -170,6 +170,7 @@ function renderClientStatus() {
   const nextMessage =
     clientUiState.statusOverrideMessage ?? getClientAutoStatusMessage();
   clientStatusTitle.textContent = nextMessage;
+  updateClientDeviceIndicator();
   syncClientMenuVisibility();
 }
 
@@ -182,12 +183,43 @@ function clearClientReconnectTimeout() {
   clientUiState.reconnectTimeoutId = null;
 }
 
+function getClientJoinRejectionMessage(errorMessage = "") {
+  if (errorMessage == "join-not-allowed") {
+    return Text.JoinRejectedNeedsHostMenu;
+  }
+
+  if (errorMessage == "slot-unavailable") {
+    return Text.JoinRejectedSlotUnavailable;
+  }
+
+  return null;
+}
+
 function scheduleClientReconnect(delayMs) {
   clearClientReconnectTimeout();
   clientUiState.reconnectTimeoutId = window.setTimeout(() => {
     clientUiState.reconnectTimeoutId = null;
     startClientConnection();
   }, delayMs);
+}
+
+function handleClientJoinRejection(
+  clientRtc,
+  rejectionMessage,
+  { retryDelayMs = 10 * 1000, retrySeconds = 10 } = {},
+) {
+  if (!clientRtc || clientRtc.connectionLossHandled) {
+    return;
+  }
+
+  clientRtc.connectionLossHandled = true;
+  clientRtc.die();
+
+  menuContainer.classList.remove("hidden");
+  setClientStatus(rejectionMessage);
+  addClientConnectionLog(rejectionMessage);
+  addClientConnectionLog(Text.TryingAgainInSeconds(retrySeconds));
+  scheduleClientReconnect(retryDelayMs);
 }
 
 function handleClientConnectionLoss(
@@ -265,11 +297,19 @@ async function startClientConnection() {
 
   setClientStatus(Text.ConnectingToHost);
   try {
-    await clientRtc.start();
+    await clientRtc.start({
+      deviceId: deviceInfo.id,
+    });
     clearClientStatusOverride();
   } catch (err) {
     console.log(Text.CouldNotConnect);
     console.log(`Error-Message: ${err.message}`);
+    const rejectionMessage = getClientJoinRejectionMessage(err.message);
+    if (rejectionMessage) {
+      handleClientJoinRejection(clientRtc, rejectionMessage);
+      return;
+    }
+
     handleClientConnectionLoss(clientRtc, {
       retryDelayMs: 10 * 1000,
       retrySeconds: 10,
@@ -290,18 +330,7 @@ function joinClientWithGameId(gameId) {
 }
 
 async function mainClient() {
-  // device index is guaranteed to be >0, so we can safely do || instead of ?? to deal with NaN
-  const savedDeviceIndex = parseInt(
-    localStorage.getItem(localStorageDeviceIndexKey),
-  );
-  const restoredDeviceIndex = savedDeviceIndex || null;
-
-  if (restoredDeviceIndex !== null) {
-    deviceInfo.deviceIndex = restoredDeviceIndex;
-    deviceInfo.id = `client-${restoredDeviceIndex}`;
-  }
-
-  initClientMenu(restoredDeviceIndex);
+  initClientMenu();
   getClientConnectionLogElement();
   renderClientConnectionLog();
   startClientStatusRefreshLoop();

@@ -7,6 +7,12 @@ const openMenuButton = document.getElementById("open-menu-button");
 const closeMenuButton = document.getElementById("close-menu-button");
 const menuContainer = document.getElementById("menu-container");
 const copyGameIdButton = document.getElementById("copy-gameid");
+const hostConnectionIndicator = document.getElementById(
+  "host-connection-indicator",
+);
+const hostConnectionCount = document.getElementById("host-connection-count");
+const clientDeviceIndicator = document.getElementById("client-device-indicator");
+const clientDeviceIndex = document.getElementById("client-device-index");
 
 const playerListContainer = document.getElementById("player-list-container");
 const playerListFieldset = document.getElementById("player-list-fieldset");
@@ -55,6 +61,7 @@ function initCommonMenu() {
 function initHostMenu() {
   menuContainer.classList.add("host");
   initCommonMenu();
+  updateHostConnectionIndicator();
   setupFloatingActions();
   setupHostDeckControls();
   setupGameCodeForms();
@@ -87,17 +94,19 @@ function initHostMenu() {
 }
 
 function updateRtcConnectionsTable() {
+  updateHostConnectionIndicator();
   if (!rtc) {
     return;
   }
 
+  const visibleConnections = rtc.connections.filter(Boolean);
   playerListFieldset.style.display = "grid";
   playerListContainer.innerHTML = "";
-  if (rtc.connections.length == 0) {
+  if (visibleConnections.length == 0) {
     playerListContainer.textContent = Text.OnceYouConnectPlayers;
   }
 
-  for (let i = 0; i < rtc.connections.length; i++) {
+  for (const connection of visibleConnections) {
     const playerContainer = document.createElement("div");
     playerContainer.classList.add("player-status-container");
     const circularIndicator = document.createElement("div");
@@ -107,8 +116,6 @@ function updateRtcConnectionsTable() {
 
     playerContainer.appendChild(circularIndicator);
     playerContainer.appendChild(playerNameElement);
-
-    const connection = rtc.connections[i];
 
     playerNameElement.textContent = Text.DeviceNum(connection.index);
 
@@ -120,10 +127,71 @@ function updateRtcConnectionsTable() {
   }
 }
 
+function getActiveRtcConnectionCount() {
+  if (!rtc?.connections) {
+    return 0;
+  }
+
+  return rtc.connections.filter((connection) => {
+    if (!connection?.alive) {
+      return false;
+    }
+
+    const status = connection.getStatus?.();
+    return status?.color != "red";
+  }).length;
+}
+
+function updateHostConnectionIndicator() {
+  if (!hostConnectionIndicator || !hostConnectionCount) {
+    return;
+  }
+
+  const shouldShow = deviceInfo.role == DeviceRole.Host;
+  hostConnectionIndicator.hidden = !shouldShow;
+  if (!shouldShow) {
+    return;
+  }
+
+  const activeConnections = getActiveRtcConnectionCount();
+  hostConnectionCount.textContent = activeConnections;
+  hostConnectionIndicator.title = `Active Connections: ${activeConnections}`;
+  hostConnectionIndicator.setAttribute(
+    "aria-label",
+    `Active Connections: ${activeConnections}`,
+  );
+}
+
 function initClientMenu() {
   initCommonMenu();
   menuContainer.classList.add("client");
+  updateClientDeviceIndicator();
   setupFloatingActions();
   setupGameCodeForms();
   setupCardSizeControls();
+}
+
+function updateClientDeviceIndicator() {
+  if (!clientDeviceIndicator || !clientDeviceIndex) {
+    return;
+  }
+
+  const hasActiveConnection =
+    typeof hasActiveClientConnection === "function" &&
+    hasActiveClientConnection();
+  const hasDeviceIndex = Number.isInteger(deviceInfo.deviceIndex);
+  const shouldShow =
+    deviceInfo.role == DeviceRole.Client && hasActiveConnection && hasDeviceIndex;
+
+  clientDeviceIndicator.hidden = !shouldShow;
+  if (!shouldShow) {
+    return;
+  }
+
+  clientDeviceIndex.textContent = deviceInfo.deviceIndex;
+  clientDeviceIndicator.title = `Device ID: ${deviceInfo.deviceIndex}`;
+  clientDeviceIndicator.setAttribute(
+    "aria-label",
+    `Device ID: ${deviceInfo.deviceIndex}`,
+  );
 }

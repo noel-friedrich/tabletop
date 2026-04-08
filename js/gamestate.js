@@ -1,4 +1,5 @@
 const urlParams = new URLSearchParams(window.location.search);
+const localStorageClientDeviceIdKey = "cards--client-device-id";
 
 const DeviceRole = {
   Host: "host",
@@ -7,8 +8,29 @@ const DeviceRole = {
 
 const DeviceIdCatalogue = { Board: "board" };
 
+function getOrCreateClientDeviceId() {
+  if (!urlParams.has("client")) {
+    return DeviceIdCatalogue.Board;
+  }
+
+  if (urlParams.has("debug")) {
+    const debugDeviceId = `client-device-${Math.random().toString().slice(2)}`;
+    localStorage.setItem(localStorageClientDeviceIdKey, debugDeviceId);
+    return debugDeviceId;
+  }
+
+  const savedDeviceId = localStorage.getItem(localStorageClientDeviceIdKey);
+  if (savedDeviceId) {
+    return savedDeviceId;
+  }
+
+  const nextDeviceId = `client-device-${Math.random().toString().slice(2)}`;
+  localStorage.setItem(localStorageClientDeviceIdKey, nextDeviceId);
+  return nextDeviceId;
+}
+
 const deviceInfo = {
-  id: urlParams.has("client") ? "unnamed-device" : DeviceIdCatalogue.Board,
+  id: getOrCreateClientDeviceId(),
   role: urlParams.has("client") ? DeviceRole.Client : DeviceRole.Host,
   gameId: urlParams.get("p") || null,
 };

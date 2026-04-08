@@ -70,6 +70,7 @@ class DataMessage {
 const rtcDataType = {
   openPool: "open_pool",
   joinPool: "join_pool",
+  JoinRejected: "join_rejected",
   Offer: "offer",
   Answer: "answer",
   HostCandidate: "host-candidate",
@@ -328,14 +329,28 @@ class RtcBase {
   ) {
     const startTime = Date.now();
     while (!untilFunc()) {
+      if (!this.alive) {
+        throw new Error(
+          this.rejectionReason ?? `Connection died while waiting for ${objectName}`,
+        );
+      }
+
       const updates = await this.getFromServer(undefined, this.signalingUid);
 
       if (!this.alive) {
-        throw new Error(`Connection died while waiting for ${objectName}`);
+        throw new Error(
+          this.rejectionReason ?? `Connection died while waiting for ${objectName}`,
+        );
       }
 
       for (let update of updates) {
-        handleUpdate(update);
+        await handleUpdate(update);
+      }
+
+      if (!this.alive) {
+        throw new Error(
+          this.rejectionReason ?? `Connection died while waiting for ${objectName}`,
+        );
       }
 
       const timeElapsed = Date.now() - startTime;
@@ -517,25 +532,25 @@ class RtcClient extends RtcBase {
     return { color, message };
   }
 
-  async joinPool(deviceIndex) {
+  async joinPool({ deviceId = null } = {}) {
     await this.uploadToServer(
       rtcDataType.joinPool,
       {
         signalingUid: this.signalingUid,
-        deviceIndex,
+        deviceId,
       },
       Text.ConnectionInvitation,
     );
   }
 
-  async start(deviceIndex = null) {
+  async start({ deviceId = null } = {}) {
     await this.init();
 
     this.answerSdp = null;
     this.offerSdp = null;
     this.signalingUid = this.generateSignalingUid();
 
-    await this.joinPool(deviceIndex);
+    await this.joinPool({ deviceId });
     if (!this.alive) return;
 
     this.peerConnection.addEventListener("icecandidateerror", (event) => {
@@ -561,6 +576,12 @@ class RtcClient extends RtcBase {
     await this.checkForUpdates(
       () => this.dataChannelOpen,
       async (signal) => {
+        if (signal.type == rtcDataType.JoinRejected) {
+          this.rejectionReason = signal.data?.reason ?? "join-not-allowed";
+          this.die();
+          return;
+        }
+
         if (signal.type == rtcDataType.HostCandidate) {
           const candidate = new RTCIceCandidate(signal.data.candidate);
           this.peerConnection.addIceCandidate(candidate);
@@ -602,6 +623,9 @@ class RtcHostManager {
     allowConnectionOverride = () => true,
     allowNewConnections = () => true,
     allowPollingCalls = () => true,
+    shouldAcceptJoinRequest = () => true,
+    resolveJoinDeviceIndex = () => null,
+    getJoinPollingPeriodMs = () => RtcHostManager.checkForJoinsPeriod,
   } = {}) {
     this.gameState = gameState;
 
@@ -611,13 +635,16 @@ class RtcHostManager {
     this.allowConnectionOverride = allowConnectionOverride;
     this.allowNewConnections = allowNewConnections;
     this.allowPollingCalls = allowPollingCalls;
+    this.shouldAcceptJoinRequest = shouldAcceptJoinRequest;
+    this.resolveJoinDeviceIndex = resolveJoinDeviceIndex;
+    this.getJoinPollingPeriodMs = getJoinPollingPeriodMs;
 
     this.poolUid = null;
     this.connections = [];
     this.polling = false;
   }
 
-  makeConnection(deviceIndex) {
+  makeConnection(deviceIndex, joinInfo = {}) {
     const connection = new RtcHost({
       logFunction: (message) => {
         if (!connection.alive) {
@@ -630,20 +657,49 @@ class RtcHostManager {
       },
       poolUid: this.poolUid,
     });
-
-    // console.log({deviceIndex, c: this.connections})
+    connection.deviceId = joinInfo.deviceId ?? null;
 
     if (deviceIndex != null && deviceIndex <= this.connections.length) {
-      this.connections[deviceIndex - 1].die();
+      const previousConnection = this.connections[deviceIndex - 1];
+      if (previousConnection) {
+        previousConnection.die();
+      }
+      connection.index = deviceIndex;
       this.connections[deviceIndex - 1] = connection;
     } else if (this.allowNewConnections()) {
-      this.connections.push(connection);
+      const reusableIndex = this.connections.findIndex(
+        (existingConnection) => !existingConnection,
+      );
+
+      if (reusableIndex >= 0) {
+        connection.index = reusableIndex + 1;
+        this.connections[reusableIndex] = connection;
+      } else {
+        connection.index = this.connections.length + 1;
+        this.connections.push(connection);
+      }
     } else {
       return null;
     }
 
-    this.sortConnections();
     return connection;
+  }
+
+  getActiveConnectionByDeviceId(deviceId) {
+    if (!deviceId) {
+      return null;
+    }
+
+    return (
+      this.connections.find((connection) => {
+        if (!connection?.alive || connection.deviceId != deviceId) {
+          return false;
+        }
+
+        const status = connection.getStatus?.();
+        return status?.color != "red";
+      }) ?? null
+    );
   }
 
   sortConnections() {
@@ -687,6 +743,21 @@ class RtcHostManager {
     this.startPolling();
   }
 
+  async rejectJoinRequest(signalingUid, reason) {
+    if (!signalingUid) {
+      return;
+    }
+
+    const rejectionSignal = new RtcBase({ poolUid: this.poolUid });
+    rejectionSignal.signalingUid = signalingUid;
+    await rejectionSignal.uploadToServer(
+      rtcDataType.JoinRejected,
+      { reason },
+      "Join Rejection",
+      false,
+    );
+  }
+
   async startPolling() {
     this.polling = true;
     while (this.polling) {
@@ -704,38 +775,85 @@ class RtcHostManager {
         .sort(
           (a, b) => new Date(b.create_timestamp) - new Date(a.create_timestamp),
         );
+      const processedJoinKeys = new Set();
 
       for (let update of updates) {
-        let deviceIndex = parseInt(update.data.deviceIndex);
-        if (Number.isNaN(deviceIndex)) {
-          deviceIndex = null;
+        const joinInfo = {
+          signalingUid: update.data.signalingUid,
+          deviceId: update.data.deviceId ?? null,
+        };
+        const joinDedupKey = joinInfo.deviceId || joinInfo.signalingUid;
+        if (processedJoinKeys.has(joinDedupKey)) {
+          continue;
+        }
+        processedJoinKeys.add(joinDedupKey);
+
+        if (!this.shouldAcceptJoinRequest(joinInfo)) {
+          await this.rejectJoinRequest(joinInfo.signalingUid, "join-not-allowed");
+          continue;
         }
 
-        const signalingUid = update.data.signalingUid;
-
-        // check if there is already a connection with that deviceIndex.
-        // if there is, we ignore their wish and give them a new one (by
-        // passing _null_ to this.makeConnection)
+        const allowNewConnections = this.allowNewConnections();
+        let deviceIndex = this.resolveJoinDeviceIndex(joinInfo);
+        const activeConnectionForDevice = this.getActiveConnectionByDeviceId(
+          joinInfo.deviceId,
+        );
         if (
-          deviceIndex != null &&
-          this.connections[deviceIndex - 1] &&
-          this.connections[deviceIndex - 1].getStatus().color !== "red" &&
-          this.allowConnectionOverride()
+          !Number.isInteger(deviceIndex) &&
+          activeConnectionForDevice &&
+          this.allowConnectionOverride(activeConnectionForDevice, joinInfo)
         ) {
-          deviceIndex = null;
+          deviceIndex = activeConnectionForDevice.index;
         }
 
-        const connection = this.makeConnection(deviceIndex);
+        if (Number.isInteger(deviceIndex)) {
+          const existingConnection = this.connections[deviceIndex - 1];
+          if (
+            existingConnection &&
+            existingConnection.alive &&
+            existingConnection.getStatus().color !== "red"
+          ) {
+            const isSameDevice =
+              existingConnection.deviceId &&
+              joinInfo.deviceId &&
+              existingConnection.deviceId == joinInfo.deviceId;
+
+            if (allowNewConnections && !isSameDevice) {
+              deviceIndex = null;
+            } else if (
+              !isSameDevice ||
+              !this.allowConnectionOverride(existingConnection, joinInfo)
+            ) {
+              await this.rejectJoinRequest(
+                joinInfo.signalingUid,
+                "slot-unavailable",
+              );
+              continue;
+            }
+          }
+        }
+
+        const connection = this.makeConnection(deviceIndex, joinInfo);
 
         if (connection !== null) {
-          connection.start(signalingUid).then(() => {
-            connection.startPinging();
-          });
+          connection
+            .start(joinInfo.signalingUid)
+            .then(() => {
+              connection.startPinging();
+            })
+            .catch((error) => {
+              connection.die();
+              this.logFunction(
+                `[${connection.index}] Failed to establish connection: ${error.message}`,
+              );
+            });
+        } else {
+          await this.rejectJoinRequest(joinInfo.signalingUid, "join-not-allowed");
         }
       }
 
       await new Promise((resolve) =>
-        setTimeout(resolve, RtcHostManager.checkForJoinsPeriod),
+        setTimeout(resolve, this.getJoinPollingPeriodMs()),
       );
     }
   }
@@ -744,16 +862,25 @@ class RtcHostManager {
     const lostConnections = [];
 
     // kill connections
-    for (const connection of this.connections) {
-      if (connection.getStatus().color == "red" && connection.alive) {
-        connection.die();
-        lostConnections.push(connection);
+    for (let i = 0; i < this.connections.length; i++) {
+      const connection = this.connections[i];
+      if (!connection) {
+        continue;
       }
+
+      const shouldRemove = !connection.alive || connection.getStatus().color == "red";
+      if (!shouldRemove) {
+        continue;
+      }
+
+      if (connection.alive) {
+        connection.die();
+      }
+
+      this.connections[i] = null;
+      lostConnections.push(connection);
     }
 
-    // removed refrences to them
-    this.connections = this.connections.filter((c) => c.alive);
-    rtc.sortConnections();
     return lostConnections;
   }
 }
