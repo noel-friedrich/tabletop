@@ -41,6 +41,13 @@ function initCommonMenu() {
   });
 
   closeMenuButton.addEventListener("click", () => {
+    if (
+      typeof shouldForceClientMenuOpen === "function" &&
+      shouldForceClientMenuOpen()
+    ) {
+      return;
+    }
+
     menuContainer.classList.add("hidden");
   });
 }

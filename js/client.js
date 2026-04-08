@@ -88,6 +88,35 @@ function getClientAutoStatusMessage() {
   return Text.ConnectedToHost;
 }
 
+function hasActiveClientConnection() {
+  if (!rtc || !rtc.alive || !rtc.dataChannelOpen) {
+    return false;
+  }
+
+  const status = rtc.getStatus?.();
+  return status?.color != "red";
+}
+
+function shouldForceClientMenuOpen() {
+  return (
+    deviceInfo.role == DeviceRole.Client &&
+    menuContainer &&
+    !hasActiveClientConnection()
+  );
+}
+
+function syncClientMenuVisibility() {
+  if (!menuContainer || deviceInfo.role != DeviceRole.Client) {
+    return;
+  }
+
+  const shouldForceOpen = shouldForceClientMenuOpen();
+  menuContainer.classList.toggle("connection-required", shouldForceOpen);
+  if (shouldForceOpen) {
+    menuContainer.classList.remove("hidden");
+  }
+}
+
 function syncGamestateToHost() {
   const message = new DataMessage(
     dataMessageType.GAMESTATE,
@@ -141,6 +170,7 @@ function renderClientStatus() {
   const nextMessage =
     clientUiState.statusOverrideMessage ?? getClientAutoStatusMessage();
   clientStatusTitle.textContent = nextMessage;
+  syncClientMenuVisibility();
 }
 
 function clearClientReconnectTimeout() {

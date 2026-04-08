@@ -109,6 +109,10 @@ html[lang="de"] :not(html)[lang="en"] {
     text-align: right;
 }
 
+.menu-container.client.connection-required .close-menu-button {
+    display: none;
+}
+
 .menu h1,
 .menu h2,
 .menu h3,

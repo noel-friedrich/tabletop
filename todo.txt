@@ -14,7 +14,7 @@
 [ ] points table
 [x] distribute evenly odd nums; with 32/3, 2 should stay on board
 [x] transparently display connection issues/problems
-[ ] make client window inaccessible when there's no active host connection
+[x] make client window inaccessible when there's no active host connection
 [ ] little indicator in top corner for board how many players and client id for clients
 [ ] in the card zoom mode, do not show nearest card if cursor isn't above any card
 [ ] add a little bottom right corner info in grey how many cards your current hand has
