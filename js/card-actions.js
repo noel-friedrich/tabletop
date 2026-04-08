@@ -211,6 +211,94 @@ function getHostDistributionDeviceIds() {
   return ids;
 }
 
+const hostDistributionAnimationState = {
+  sequenceId: 0,
+};
+
+const hostDistributionAnimationStepMs = 110;
+
+function waitMs(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function cancelHostDistributionAnimation() {
+  hostDistributionAnimationState.sequenceId++;
+}
+
+function buildHostDistributionPatches(
+  cardsToDeal,
+  { oneEach = false, fullRoundsOnly = false } = {},
+) {
+  const targetDeviceIds = getHostDistributionDeviceIds();
+  const selectedCards = [...cardsToDeal].sort((a, b) => b.layerIndex - a.layerIndex);
+
+  let distributableCount = selectedCards.length;
+  if (oneEach) {
+    distributableCount = Math.min(selectedCards.length, targetDeviceIds.length);
+  } else if (fullRoundsOnly) {
+    distributableCount =
+      Math.floor(selectedCards.length / targetDeviceIds.length) *
+      targetDeviceIds.length;
+  }
+
+  const cardsForDistribution = selectedCards.slice(0, distributableCount);
+  if (cardsForDistribution.length == 0) {
+    return [];
+  }
+
+  const handsByDeviceId = new Map(
+    targetDeviceIds.map((deviceId) => [deviceId, []]),
+  );
+
+  for (let i = 0; i < cardsForDistribution.length; i++) {
+    const deviceId = targetDeviceIds[i % targetDeviceIds.length];
+    handsByDeviceId.get(deviceId).push(cardsForDistribution[i]);
+  }
+
+  const patchesByCardUid = new Map();
+  let layerIndex = gameState.maxLayerIndex + 1;
+  for (const deviceId of targetDeviceIds) {
+    const handCards = handsByDeviceId.get(deviceId);
+    const targets = linePositionsForLocalCards(handCards.length, {
+      startX: 0.16,
+      endX: 0.84,
+      y: 0.5,
+    });
+
+    for (let i = 0; i < handCards.length; i++) {
+      patchesByCardUid.set(handCards[i].uid, {
+        uid: handCards[i].uid,
+        to: targets[i],
+        deviceId,
+        layerIndex,
+        faceUp: true,
+      });
+      layerIndex++;
+    }
+  }
+
+  return cardsForDistribution.map((card) => patchesByCardUid.get(card.uid));
+}
+
+async function animateHostDistributionPatches(
+  patches,
+  { stepMs = hostDistributionAnimationStepMs } = {},
+) {
+  const sequenceId = ++hostDistributionAnimationState.sequenceId;
+
+  for (let i = 0; i < patches.length; i++) {
+    if (sequenceId != hostDistributionAnimationState.sequenceId) {
+      return;
+    }
+
+    requestCardPatches([patches[i]]);
+
+    if (i < patches.length - 1) {
+      await waitMs(stepMs);
+    }
+  }
+}
+
 function serializeCardPatch(patch) {
   const serialized = { uid: patch.uid };
 
@@ -511,59 +599,42 @@ function shuffleAndStackNearbyPile(anchorCard) {
   });
 }
 
-function hostDealCardsToHands(cardsToDeal, { oneEach = false } = {}) {
+function hostDealCardsToHands(
+  cardsToDeal,
+  { oneEach = false, fullRoundsOnly = false, animate = false } = {},
+) {
   if (deviceInfo.role != DeviceRole.Host || cardsToDeal.length == 0) {
     return;
   }
 
-  const targetDeviceIds = getHostDistributionDeviceIds();
-  const selectedCards = [...cardsToDeal].sort((a, b) => b.layerIndex - a.layerIndex);
-  const cardsForDistribution = oneEach
-    ? selectedCards.slice(0, targetDeviceIds.length)
-    : selectedCards;
-
-  const handsByDeviceId = new Map(
-    targetDeviceIds.map((deviceId) => [deviceId, []]),
-  );
-
-  for (let i = 0; i < cardsForDistribution.length; i++) {
-    const deviceId = targetDeviceIds[i % targetDeviceIds.length];
-    handsByDeviceId.get(deviceId).push(cardsForDistribution[i]);
+  const patches = buildHostDistributionPatches(cardsToDeal, {
+    oneEach,
+    fullRoundsOnly,
+  });
+  cancelHostDistributionAnimation();
+  if (patches.length == 0) {
+    return;
   }
 
-  const patches = [];
-  let layerIndex = gameState.maxLayerIndex + 1;
-  for (const deviceId of targetDeviceIds) {
-    const handCards = handsByDeviceId.get(deviceId);
-    const targets = linePositionsForLocalCards(handCards.length, {
-      startX: 0.16,
-      endX: 0.84,
-      y: 0.5,
-    });
-
-    for (let i = 0; i < handCards.length; i++) {
-      patches.push({
-        uid: handCards[i].uid,
-        to: targets[i],
-        deviceId,
-        layerIndex,
-        faceUp: true,
-      });
-      layerIndex++;
-    }
+  if (animate) {
+    animateHostDistributionPatches(patches);
+  } else {
+    requestCardPatches(patches);
   }
-
-  requestCardPatches(patches);
 }
 
 function hostDealOneCardPerPlayerFromPile(anchorCard) {
   const pileCards = getNearbyPileCards(anchorCard, { boardOnly: true });
-  hostDealCardsToHands(pileCards, { oneEach: true });
+  hostDealCardsToHands(pileCards, { oneEach: true, animate: true });
 }
 
 function hostDealPileEvenly(anchorCard) {
   const pileCards = getNearbyPileCards(anchorCard, { boardOnly: true });
-  hostDealCardsToHands(pileCards, { oneEach: false });
+  hostDealCardsToHands(pileCards, {
+    oneEach: false,
+    fullRoundsOnly: true,
+    animate: true,
+  });
 }
 
 function hostDistributeShuffledCards() {
@@ -573,6 +644,7 @@ function hostDistributeShuffledCards() {
 
   const allCards = [...gameState.gameCards];
   shuffleArrayInPlace(allCards);
+  cancelHostDistributionAnimation();
   hostDealCardsToHands(allCards, { oneEach: false });
 }
 

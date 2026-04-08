@@ -1,4 +1,92 @@
 const localStorageDeviceIndexKey = "cards--device-index";
+const clientReconnectDelayMs = 1 * 2 * 3 * 4 * 5 * 6 * 7;
+const clientReconnectRetrySeconds = 5;
+const clientStatusRefreshPeriodMs = 1000;
+const clientConnectionLogLimit = 3;
+
+const clientUiState = {
+  statusOverrideMessage: null,
+  reconnectTimeoutId: null,
+  statusRefreshIntervalId: null,
+  connectionLogMessages: [],
+  connectionLogElement: null,
+};
+
+function getClientConnectionLogElement() {
+  if (clientUiState.connectionLogElement) {
+    return clientUiState.connectionLogElement;
+  }
+
+  if (!clientStatusTitle) {
+    return null;
+  }
+
+  const logElement = document.createElement("div");
+  logElement.className = "client-status-log";
+  clientStatusTitle.after(logElement);
+  clientUiState.connectionLogElement = logElement;
+  return logElement;
+}
+
+function renderClientConnectionLog() {
+  const logElement = getClientConnectionLogElement();
+  if (!logElement) {
+    return;
+  }
+
+  const lastMessages = clientUiState.connectionLogMessages
+    .slice(-clientConnectionLogLimit);
+
+  logElement.replaceChildren(
+    ...lastMessages.map((message) => {
+      const entry = document.createElement("div");
+      entry.className = "client-status-log-entry";
+      entry.textContent = message;
+      return entry;
+    }),
+  );
+}
+
+function addClientConnectionLog(message) {
+  const normalizedMessage = `${message ?? ""}`.trim();
+  if (!normalizedMessage) {
+    return;
+  }
+
+  clientUiState.connectionLogMessages.push(normalizedMessage);
+  if (clientUiState.connectionLogMessages.length > clientConnectionLogLimit) {
+    clientUiState.connectionLogMessages = clientUiState.connectionLogMessages.slice(
+      -clientConnectionLogLimit,
+    );
+  }
+
+  renderClientConnectionLog();
+}
+
+function getClientAutoStatusMessage() {
+  if (!rtc) {
+    return "";
+  }
+
+  if (!rtc.alive) {
+    return Text.ConnectionFailed;
+  }
+
+  const status = rtc.getStatus?.();
+  if (!status) {
+    return "";
+  }
+
+  if (status.color == "red") {
+    return Text.ConnectionFailed;
+  }
+
+  if (status.color == "blue" || !rtc.dataChannelOpen) {
+    return Text.ConnectingToHost;
+  }
+
+  return Text.ConnectedToHost;
+}
 
 function syncGamestateToHost() {
   const message = new DataMessage(
@@ -36,9 +124,84 @@ function onClientDataMessage(dataMessage) {
 }
 
 function setClientStatus(message) {
-  if (clientStatusTitle) {
-    clientStatusTitle.textContent = message;
+  clientUiState.statusOverrideMessage = message ?? null;
+  renderClientStatus();
+}
+
+function clearClientStatusOverride() {
+  clientUiState.statusOverrideMessage = null;
+  renderClientStatus();
+}
+
+function renderClientStatus() {
+  if (!clientStatusTitle) {
+    return;
   }
+
+  const nextMessage =
+    clientUiState.statusOverrideMessage ?? getClientAutoStatusMessage();
+  clientStatusTitle.textContent = nextMessage;
+}
+
+function clearClientReconnectTimeout() {
+  if (clientUiState.reconnectTimeoutId === null) {
+    return;
+  }
+
+  clearTimeout(clientUiState.reconnectTimeoutId);
+  clientUiState.reconnectTimeoutId = null;
+}
+
+function scheduleClientReconnect(delayMs) {
+  clearClientReconnectTimeout();
+  clientUiState.reconnectTimeoutId = window.setTimeout(() => {
+    clientUiState.reconnectTimeoutId = null;
+    startClientConnection();
+  }, delayMs);
+}
+
+function handleClientConnectionLoss(
+  clientRtc,
+  { retryDelayMs = clientReconnectDelayMs, retrySeconds = clientReconnectRetrySeconds } = {},
+) {
+  if (!clientRtc || clientRtc.connectionLossHandled) {
+    return;
+  }
+
+  clientRtc.connectionLossHandled = true;
+  clientRtc.die();
+
+  menuContainer.classList.remove("hidden");
+  setClientStatus(Text.ConnectionFailed);
+  addClientConnectionLog(Text.TryingAgainInSeconds(retrySeconds));
+  console.log(Text.TryingAgainInSeconds(retrySeconds));
+  scheduleClientReconnect(retryDelayMs);
+}
+
+function refreshClientConnectionHealth() {
+  if (!rtc) {
+    return renderClientStatus();
+  }
+
+  const status = rtc.getStatus?.();
+  if (rtc.alive && status?.color == "red") {
+    handleClientConnectionLoss(rtc);
+    return;
+  }
+
+  renderClientStatus();
+}
+
+function startClientStatusRefreshLoop() {
+  if (clientUiState.statusRefreshIntervalId !== null) {
+    return;
+  }
+
+  clientUiState.statusRefreshIntervalId = window.setInterval(
+    refreshClientConnectionHealth,
+    clientStatusRefreshPeriodMs,
+  );
+  refreshClientConnectionHealth();
 }
 
 function updateClientUrlGameId(gameId) {
@@ -50,35 +213,37 @@ function updateClientUrlGameId(gameId) {
 
 async function startClientConnection() {
   if (!deviceInfo.gameId) {
+    clearClientReconnectTimeout();
     setClientStatus("Enter a game code to connect.");
     return;
   }
 
+  clearClientReconnectTimeout();
   rtc?.die();
-  rtc = new RtcClient({
+  const clientRtc = new RtcClient({
     logFunction: (message) => {
       console.log("[RTC LOG]", message);
+      addClientConnectionLog(message);
     },
     onDataMessage: onClientDataMessage,
     onDataClose: () => {
-      menuContainer.classList.remove("hidden");
-      setClientStatus(Text.ConnectionFailed);
-      console.log(Text.TryingAgainInSeconds(5));
-      setTimeout(startClientConnection, 1 * 2 * 3 * 4 * 5 * 6 * 7); // 7! ~ 5000, fun fact
+      handleClientConnectionLoss(clientRtc);
     },
     poolUid: deviceInfo.gameId,
   });
+  rtc = clientRtc;
 
   setClientStatus(Text.ConnectingToHost);
   try {
-    await rtc.start();
-    setClientStatus(Text.ConnectedToHost);
+    await clientRtc.start();
+    clearClientStatusOverride();
   } catch (err) {
     console.log(Text.CouldNotConnect);
     console.log(`Error-Message: ${err.message}`);
-    console.log(Text.TryingAgainInSeconds(10));
-    setClientStatus(Text.ConnectionFailed);
-    return setTimeout(startClientConnection, 10 * 1000);
+    handleClientConnectionLoss(clientRtc, {
+      retryDelayMs: 10 * 1000,
+      retrySeconds: 10,
+    });
   }
 }
 
@@ -107,6 +272,9 @@ async function mainClient() {
   }
 
   initClientMenu(restoredDeviceIndex);
+  getClientConnectionLogElement();
+  renderClientConnectionLog();
+  startClientStatusRefreshLoop();
   gameState.redraw();
 
   await cardDecks.loadAll();

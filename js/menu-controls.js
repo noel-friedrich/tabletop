@@ -479,10 +479,6 @@ function setupFloatingActions() {
       run: () => arrangeClientHand({ order: "sorted", layout: "fan" }),
     },
     {
-      name: "host-distribute-shuffle",
-      run: () => hostDistributeShuffledCards(),
-    },
-    {
       name: "host-sort-center",
       run: () => hostSortAndCenterAllCards(),
     },
