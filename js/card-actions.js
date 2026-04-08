@@ -265,6 +265,7 @@ const hostDistributionAnimationState = {
 };
 
 const hostDistributionAnimationStepMs = 110;
+const hostDistributionRevealDelayMs = 450;
 
 function waitMs(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -315,12 +316,17 @@ function buildHostDistributionPatches(
     });
 
     for (let i = 0; i < handCards.length; i++) {
+      const card = handCards[i];
+      const shouldRevealInPrivateArea =
+        deviceId != DeviceIdCatalogue.Board && !card.faceUp;
+
       patchesByCardUid.set(handCards[i].uid, {
-        uid: handCards[i].uid,
+        uid: card.uid,
         to: targets[i],
         deviceId,
         layerIndex,
-        faceUp: true,
+        faceUp: shouldRevealInPrivateArea ? false : card.faceUp,
+        revealFaceUp: shouldRevealInPrivateArea ? true : undefined,
       });
       layerIndex++;
     }
@@ -329,9 +335,21 @@ function buildHostDistributionPatches(
   return cardsForDistribution.map((card) => patchesByCardUid.get(card.uid));
 }
 
+function getHostDistributionRevealPatches(patches) {
+  return patches
+    .filter((patch) => patch.revealFaceUp !== undefined)
+    .map((patch) => ({
+      uid: patch.uid,
+      faceUp: patch.revealFaceUp,
+    }));
+}
+
 async function animateHostDistributionPatches(
   patches,
-  { stepMs = hostDistributionAnimationStepMs } = {},
+  {
+    stepMs = hostDistributionAnimationStepMs,
+    revealDelayMs = hostDistributionRevealDelayMs,
+  } = {},
 ) {
   const sequenceId = ++hostDistributionAnimationState.sequenceId;
 
@@ -341,6 +359,20 @@ async function animateHostDistributionPatches(
     }
 
     requestCardPatches([patches[i]]);
+    if (patches[i].revealFaceUp !== undefined) {
+      window.setTimeout(() => {
+        if (sequenceId != hostDistributionAnimationState.sequenceId) {
+          return;
+        }
+
+        requestCardPatches([
+          {
+            uid: patches[i].uid,
+            faceUp: patches[i].revealFaceUp,
+          },
+        ]);
+      }, revealDelayMs);
+    }
 
     if (i < patches.length - 1) {
       await waitMs(stepMs);
@@ -669,6 +701,12 @@ function hostDealCardsToHands(
     animateHostDistributionPatches(patches);
   } else {
     requestCardPatches(patches);
+    const revealPatches = getHostDistributionRevealPatches(patches);
+    if (revealPatches.length > 0) {
+      window.setTimeout(() => {
+        requestCardPatches(revealPatches);
+      }, hostDistributionRevealDelayMs);
+    }
   }
 }
 
